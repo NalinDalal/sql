@@ -1,6 +1,3 @@
-page 160-188
-Chap 9 INTERACTIVE SQL PART - III
-
 # Computations in SQL
 Various like:
 - Addition +

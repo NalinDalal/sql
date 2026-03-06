@@ -1,18 +1,19 @@
 SECTION — III: STRUCTURED QUERY LANGUAGE (SQL)
 chap 7
-pdf - 132
-book - 113
 
 # Data Types
+
 ## Basic Data Types
 
 - `CHAR(size)`:string value of fixed length; gets padded with space; say 20 is
-arg but we give 15 so still remaining 5 will get saved with WhiteSpaces.
+  arg but we give 15 so still remaining 5 will get saved with WhiteSpaces.
 - `VARCHAR(size)`:here that remaining 5 will get trimmed
-but CHAR is faster than VARCHAR upto 50%
+  but CHAR is faster than VARCHAR upto 50%
 
-# CREATE 
+# CREATE
+
 Rules:
+
 1. A name can have upto 30 char
 2. A-Z,a-z,0-9
 3. name should begin with alphabet
@@ -20,12 +21,14 @@ Rules:
 5. reserved words not allowed
 
 Syntax:
+
 ```sql
 CREATE TABLE <Tablename> (<ColumnName1> <DataType>(<size), <ColumnName2> <DataType>(<Size>));
 ```
 
 Example: Create the BRANCH_MSTR table as shown in the Chapter 6 along with the structure for other table belonging to the Bank System.
 first create the database, then table
+
 ```sql
 CREATE SCHEMA "DBA_BANKSYS";
 CREATE TABLE "DBA_BANKSYS"."BRANCH_MSTR" (
@@ -34,40 +37,45 @@ CREATE TABLE "DBA_BANKSYS"."BRANCH_MSTR" (
 );
 
 ```
-set the `search_path`-> 
+
+set the `search_path`->
+
 ```sql
 postgres=# SET search_path TO DBA_BANKSYS;
 SET
 ```
+
 # INSERT
+
 - Create new empty row in database
 - Loads the values passed (by the SQL insert) into the columns specified
 
 ## All Row & Column
+
 ```sql
 INSERT INTO <tablename> (<columnname1>, <columnname2>)
 VALUES (<expression>, <expression2 >);
 ```
 
-Ex: `
-INSERT INTO BRANCH_MSTR (BRANCH_NO, NAME) VALUES('B!', 'Vile Parle (HO)');
+Ex: `INSERT INTO BRANCH_MSTR (BRANCH_NO, NAME) VALUES('B!', 'Vile Parle (HO)');
 INSERT INTO BRANCH_MSTR (BRANCH_NO, NAME) VALUES('B3', 'Churchgate');
 INSERT INTO BRANCH_MSTR (BRANCH_NO, NAME) VALUES('B4', 'Sion');
 INSERT INTO BRANCH_MSTR (BRANCH_NO, NAME) VALUES('BS', 'Borivali');
-INSERT INTO BRANCH_MSTR (BRANCH_NO, NAME) VALUES('B6', 'Matunga');
-`
+INSERT INTO BRANCH_MSTR (BRANCH_NO, NAME) VALUES('B6', 'Matunga');`
 alt:
 `INSERT INTO "DBA_BANKSYS"."BRANCH_MSTR" ("BRANCH_NO", "NAME")
 VALUES ('B!', 'Vile Parle (HO)');
 INSERT 0 1`
 
 # View Data in Table
+
 use SELECT Clause
 `SELECT <ColumnName 1> TO <ColumnName A> FROM TableName;`
 Syntax:`SELECT * FROM <TableName>;`
 gives all of schema with data
 
 ## Selected Columns And All Rows
+
 ```sql
 SELECT <ColumnName1>, <ColumnName2> FROM <TableName>:
 ```
@@ -77,6 +85,7 @@ Ex:
 since belongs to special schema -> `SELECT * FROM "DBA_BANKSYS"."BRANCH_MSTR";`
 
 ## Selected Rows And All Columns
+
 WHERE Clause in an SQL query to apply a filter on the rows retrieved.
 
 When a where clause is added to the SQL query, the Oracle engine compares each record in the table with
@@ -86,31 +95,41 @@ specified condition.
 ```sql
 SELECT * FROM <TableName> WHERE <Condition>;
 ```
+
 Here, <Condition> is always quantified as <ColumnName = Value>
 Ex: `SELECT item FROM Orders WHERE amount>300;`
 
 ## Selected Columns And Selected Rows
-To view a specific set of rows and columns from a table 
+
+To view a specific set of rows and columns from a table
+
 ```sql
 SELECT <ColumnNamei>, <ColumnName2> FROM <TableName>
 WHERE <Condition>;
 ```
+
 Ex: `SELECT first_name, last_name FROM Customers WHERE age>17;`
 
 # ELIMINATING DUPLICATE ROWS WHEN USING A SELECT STATEMENT
+
 The `DISTINCT` clause allows removing duplicates from the result set. The `DISTINCT` clause can only be used with select statements.
+
 ```sql
 SELECT DISTINCT <ColumnNamel1>, <ColumnName2> FROM <TableName>;
 ```
-The `SELECT DISTINCT`  SQL syntax scans through entire rows, and eliminates rows that have exactly the same contents in each column.
+
+The `SELECT DISTINCT` SQL syntax scans through entire rows, and eliminates rows that have exactly the same contents in each column.
 
 Ex: `SELECT DISTINCT item,amount,customer_id FROM Orders;`
 
 # SORTING DATA in TABLE
+
 Syntax:
+
 ```sql
 SELECT * FROM <TableName> ORDER BY <ColumnNamel1>, <ColumnName2> <[Sort Order]>;
 ```
+
 `ORDER BY` clause sorts the result set based on the columns specified.
 `ORDER BY` - can only be used in SELECT statements.
 
@@ -120,9 +139,10 @@ gives the whole table in ascending order as per first_name with all other releva
 Ex: `SELECT * FROM Customers ORDER BY first_name DESC;`
 gives the whole table in descending order as per first_name with all other relevant data
 
-
 # CREATING A TABLE FROM A TABLE
+
 Syntax:
+
 ```sql
 CREATE TABLE <TableName> (<ColumnName>, < ColumnName>) AS SELECT <ColumnName>, <ColumnName> FROM <TableName>;
 ```
@@ -130,29 +150,37 @@ CREATE TABLE <TableName> (<ColumnName>, < ColumnName>) AS SELECT <ColumnName>, <
 ex: `CREATE TABLE orders2 AS SELECT order_id, item, amount FROM Orders;`
 
 # INSERTING DATA INTO A TABLE FROM ANOTHER TABLE
+
 it is quite possible to populate a table with data that already exists in another table.
 Syntax:
+
 ```sql
 INSERT INTO <TableName>
 SELECT <ColumnName 1>, <ColumnName N> FROM <TableName>;
 ```
+
 ex: `INSERT INTO orders2 SELECT order_id,item,amount FROM Orders;`
 
 # DELETE OPERATIONS
+
 verb DELETE in SQL is used to remove either:
+
 - All the rows from a table
-OR
+  OR
 - A set of rows from a table
 
 ## Removal Of All Rows
+
 ```sql
 DELETE FROM <TableName>:
 ```
+
 ex: `DELETE FROM orders2;`
 
 note: table and schema exist, but the data is deleted
 
 ## Removal Of Specific Row(s) Based On The Data Held By The Other Table
+
 it is desired to delete records in one table based on values in another table.
 it is not possible to list more than one table in the FROM clause while performing a delete, the EXISTS clause can be used.
 ex: `DELETE FROM ADDR _DTLS WHERE EXISTS(SELECT FNAME FROM CUST MSTR
@@ -160,23 +188,29 @@ WHERE CUST_MSTR.CUST_NO = ADDR_DTLS.CODE_NO
 AND CUST_MSTR.FNAME = 'Ivan’);`
 
 # UPDATE OPERATIONS
+
 UPDATE command is used to change or modify data values in a table.
 The verb update in SQL is used to either update:
+
 - All the rows from a table
-OR
+  OR
 - A select set of rows from a table
 
 ## UPDATE All Rows
+
 The UPDATE statement updates columns in the existing table’s rows with new values. The SET clause
 indicates which column data should be modified and the new values that they should hold. The WHERE
 clause, if given, specifies which rows should be updated. Otherwise, all table rows are updated.
+
 ```sql
 UPDATE <TableName>
 SET <ColumnName1> = <Expression1>, <ColumnName2> = <Expression2>;
 ```
+
 ex: `UPDATE ADDR _DTLS SET City = 'Bombay’;`
 
 ## UPDATE Conditionally
+
 ```sql
 UPDATE <TableName>
 SET <ColumnNamei> = <Expressionl>, <ColumnName2> = <Expression2 >
@@ -187,6 +221,7 @@ ex: `UPDATE BRANCH MSTR SET NAME = 'Head Office’
 WHERE NAME = 'Vile Parle (HO)';`
 
 # MODIFYING THE STRUCTURE OF TABLES
+
 `ALTER TABLE` allows changing the structure of an existing table.
 working-> making a temporary copy of the original table.;alteration is performed on copy.
 
@@ -199,25 +234,32 @@ ADD(<NewColumnName> <Datatype> (<Size>),
 ex:`ALTER TABLE "BRANCH_MSTR" ADD COLUMN "CITY" VARCHAR(25);`
 
 `DROPPING COLUMN`
+
 ```sql
 ALTER TABLE <TableName> DROP COLUMN <ColumnName>:
 ```
+
 ex: `ALTER TABLE BRANCH MSTR DROP COLUMN CITY;`
 
 `Modifying Existing Columns`
+
 ```sql
 ALTER TABLE eVableNiame>
 MODIFY (<ColumnName> < NewDatatype>(<NewSize>));
 ```
+
 ex: `ALTER TABLE BRANCH_MSTR MODIFY (NAME varchar2(30));`
 
 ## RESTRICTIONS
+
 The following tasks cannot be performed when using the ALTER TABLE clause:
+
 - Change the name of the table
 - Change the name of the column
 - Decrease the size of a column if table data exists
 
 # RENAMING TABLES
+
 ```sql
 RENAME <TableName> TO <NewTableName>
 ```
@@ -225,8 +267,10 @@ RENAME <TableName> TO <NewTableName>
 ex: `RENAME BRANCH_MSTR TO BRANCHES;`
 
 # TRUNCATE TABLE
+
 it empties table completely
 Differes from `DELETE` in ways:
+
 - Truncate operations drop and re-create the table, which is much faster than deleting rows one by one
 - Truncate operations are not transaction-safe (i.e. an error will occur if an active transaction or an active table lock exists)
 - The number of deleted rows are not returned
@@ -238,43 +282,46 @@ TRUNCATE TABLE <TableName>;
 ex: `TRUNCATE TABLE BRANCH MSTR;`
 
 # DESTROYING TABLES
+
 ```sql
 DROP TABLE <TableName>;
 ```
 
 ex: `DROP TABLE BRANCH_MSTR;`
 
-
 # CREATING SYNONYMs
+
 A synonym is an alternative name for objects such as tables, views, sequences, stored procedures, and other database objects.
 
-```sql 
+```sql
 CREATE [OR REPLACE] [PUBLIC] SYNONYM [SCHEMA .]
 SYNONYM_NAME FOR [SCHEMA .]
 OBJECT_NAME [@ DBLINK];
 ```
--  The OR replace phrase allows to recreate the synonym (if it already exists) without having to issue a DROP synonym command.
+
+- The OR replace phrase allows to recreate the synonym (if it already exists) without having to issue a DROP synonym command.
 - The PUBLIC phrase means that the synonym is a public synonym and is accessible to all users.
-Remember though that the user must first have the appropriate privileges to the object to use the
-synonym.
+  Remember though that the user must first have the appropriate privileges to the object to use the
+  synonym.
 - The SCHEMA phrase is the appropriate schema. If this phrase is omitted, Oracle assumes that a
-reference is made to the user’s own schema.
+  reference is made to the user’s own schema.
 - The OBJECT_NAME phrase is the name of the object for which you are creating the synonym. It can be one of the following:
-    - Table
-    - Package
-    - View
-    - Materialized View
-    - Sequence
-    - Java Class Schema Object
-    - Stored Procedure
-    - User-Defined Object
-    - Function
-    - Synonym 
+  - Table
+  - Package
+  - View
+  - Materialized View
+  - Sequence
+  - Java Class Schema Object
+  - Stored Procedure
+  - User-Defined Object
+  - Function
+  - Synonym
 
 ex: Create a synonym to a table named EMP held by the user SCOTT.
 `CREATE PUBLIC SYNONYM EMPLOYEES FOR SCOTT.EMP;`
 
 # DROPPING SYNONYM
+
 ```sql
 DROP [PUBLIC] SYNONYM [SCHEMA.JSYNONYM_NAME [FORCE];
 ```
@@ -285,7 +332,7 @@ DROP [PUBLIC] SYNONYM [SCHEMA.JSYNONYM_NAME [FORCE];
 ex: `DROP PUBLIC SYNONYM EMPLOYEES;`
 
 # DISPLAY TABLE STRUCTURE
+
 ```sql
 \d <TableName>;
 ```
-
