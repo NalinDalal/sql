@@ -17,8 +17,12 @@ SQL is languages of database
     sql contraints
 [Computations](./computations.md)
     Computations and Maths on SQL
-[data-grouping](./data-grouping.md)
+[data-grouping](./data-grouping.md) - to do
     Group Similar Data
+[Joins](./joins.md)
+    Joins in SQL(208-228)
+JOINS: 208:book/228:pdf
+to start
 
 -----
 
