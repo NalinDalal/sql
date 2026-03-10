@@ -22,6 +22,13 @@ SQL is languages of database
 [Joins](./joins.md)
     Used to manipulate similar data from multiple tables
 [Advanced SQL](./advanced-sql.md)
+    Advanced SQL queries
+
+[SECURITY MANAGEMENT USING SQL](./security.md)
+    Granting and Revoking Permissions
+
+chap 13
+292
 
 -----
 
