@@ -27,8 +27,8 @@ SQL is languages of database
 [SECURITY MANAGEMENT USING SQL](./security.md)
     Granting and Revoking Permissions
 
-chap 13
-292
+[OOPs](./oops.md)
+
 
 -----
 
