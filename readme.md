@@ -29,6 +29,11 @@ SQL is languages of database
 
 [OOPs](./oops.md)
 
+[Advanced Features in SQL*](./advance-feat.md)
+
+
+319
+pag no 430 is last page to be visited
 
 -----
 
