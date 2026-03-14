@@ -4,23 +4,30 @@ It is used to store something with many use cases
 SQL is languages of database
 
 
-
 [introduction](./1.intro.md)
     intro, types, languages & types, normalisation
+
 [installing database and initialisation](./2.installation.md)
     database install
+
 [control commands](./ctrl-cmds.md)
     sql environment variables; saw sample er model
+
 [sql-cmds](./sql-cmd.md)
     sql commands
+
 [Constraints](./constraints.md)
     sql contraints
+
 [Computations](./computations.md)
     Computations and Maths on SQL
+
 [data-grouping](./data-grouping.md)
     Group Similar Data
+
 [Joins](./joins.md)
     Used to manipulate similar data from multiple tables
+
 [Advanced SQL](./advanced-sql.md)
     Advanced SQL queries
 
@@ -31,9 +38,19 @@ SQL is languages of database
 
 [Advanced Features in SQL*](./advance-feat.md)
 
+[PL/SQL](./pl-sql.md)
+    procedural language for SQL
 
-319
-pag no 430 is last page to be visited
+
+chap 16
+pdf: 354-370
+
+chap 17
+pdf: 373-396
+
+chap 18
+pdf: 399-450
+
 
 -----
 
