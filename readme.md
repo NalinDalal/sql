@@ -41,9 +41,8 @@ SQL is languages of database
 [PL/SQL](./pl-sql.md)
     procedural language for SQL
 
-
-chap 16
-pdf: 354-370
+[Transactions](./transactions.md)
+    Transactions in SQL
 
 chap 17
 pdf: 373-396
