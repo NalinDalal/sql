@@ -31,7 +31,7 @@ SQL is languages of database
 [Advanced SQL](./advanced-sql.md)
     Advanced SQL queries
 
-[SECURITY MANAGEMENT USING SQL](./security.md)
+[SECURITY MANAGEMENT USING SQL](./permissions.md)
     Granting and Revoking Permissions
 
 [OOPs](./oops.md)
@@ -44,8 +44,7 @@ SQL is languages of database
 [Transactions](./transactions.md)
     Transactions in SQL
 
-chap 17
-pdf: 373-396
+[PL/SQL Security](./security.md)
 
 chap 18
 pdf: 399-450
