@@ -46,8 +46,7 @@ SQL is languages of database
 
 [PL/SQL Security](./security.md)
 
-chap 18
-pdf: 399-450
+[PL/SQL DataBase Objects](./db-obj.md)
 
 
 -----
