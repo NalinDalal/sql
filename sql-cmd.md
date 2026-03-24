@@ -72,7 +72,11 @@ INSERT 0 1`
 use SELECT Clause
 `SELECT <ColumnName 1> TO <ColumnName A> FROM TableName;`
 Syntax:`SELECT * FROM <TableName>;`
+`SELECT *` - Retrieve all column(everything)
+`FROM` - tell sql where to find your data
 gives all of schema with data
+
+first FROM clauses gets executed then SELCT clause gets executed
 
 ## Selected Columns And All Rows
 
@@ -110,9 +114,20 @@ WHERE <Condition>;
 
 Ex: `SELECT first_name, last_name FROM Customers WHERE age>17;`
 
+## Select only limited Rows
+We use `Top(Limit)` to return the restricted number of rows
+
+to return only 3 Customers
+```sql
+SELECT Top 3 *
+    FROM customers
+```
+
+
 # ELIMINATING DUPLICATE ROWS WHEN USING A SELECT STATEMENT
 
 The `DISTINCT` clause allows removing duplicates from the result set. The `DISTINCT` clause can only be used with select statements.
+Appears only once
 
 ```sql
 SELECT DISTINCT <ColumnNamel1>, <ColumnName2> FROM <TableName>;
@@ -130,14 +145,16 @@ Syntax:
 SELECT * FROM <TableName> ORDER BY <ColumnNamel1>, <ColumnName2> <[Sort Order]>;
 ```
 
-`ORDER BY` clause sorts the result set based on the columns specified.
-`ORDER BY` - can only be used in SELECT statements.
+`ORDER BY` clause sorts the result set based on the columns specified; can only be used in SELECT statements.
 
 Ex: `SELECT * FROM Customers ORDER BY first_name;`
 gives the whole table in ascending order as per first_name with all other relevant data
 
 Ex: `SELECT * FROM Customers ORDER BY first_name DESC;`
 gives the whole table in descending order as per first_name with all other relevant data
+
+Ex: `SELECT TOP 2 * FROM orders ORDER BY order_date DESC`
+Get 2 most recent orders
 
 # CREATING A TABLE FROM A TABLE
 

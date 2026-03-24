@@ -51,8 +51,9 @@ SQL is languages of database
 
 -----
 
-learn from pl-sql, then u have a [video course of 30 hours](https://www.youtube.com/watch?v=SSKVgrwhzus&list=WL&index=1&t=1533s) to do side-by-side
-and [official doc](https://www.postgresql.org/docs/current/sql.html)
+[video course of 30 hours](https://www.youtube.com/watch?v=SSKVgrwhzus&list=WL&index=1&t=1533s) to do side-by-side and [official doc](https://www.postgresql.org/docs/current/sql.html)
+
+ddl commands: 1hr:32min
 
 [video resources](https://github.com/DataWithBaraa/sql-ultimate-course)
 [dataset](https://github.com/DataWithBaraa/sql-ultimate-course/tree/main/datasets/sql-server)
