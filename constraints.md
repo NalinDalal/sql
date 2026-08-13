@@ -1,285 +1,194 @@
-page 137 - 155
-Chap 8 INTERACTIVE-SQL PART II
+# Data Constraints
 
-# DATA CONSTRAINTS
-to check DATA for integrity prior storage.Once it is part the db engine checks
-the inputs; if passed then gets entered into table else rejected
+> **Dialect note:** Oracle (VARCHAR2, `ON DELETE` rules). Chapter 8 of the course PDF (pp. 137–155).
 
-Business rules, which are enforced on data being stored in a table, are called Constraints. Constraints,
-super control the data being entered into a table for permanent storage
+### What Constraints Are
+#### Explain It
+Constraints are business rules enforced by the database engine *before* data is stored. When an INSERT or UPDATE arrives, the engine checks the row against every active constraint; if it passes, the row is stored, otherwise the statement is rejected with an error. They are declared with `CREATE TABLE` or added later with `ALTER TABLE`. Constraints split into I/O-style referential ones (PRIMARY KEY, FOREIGN KEY) and business-rule ones (NOT NULL, UNIQUE, CHECK).
 
-ALTER TABLE and CREATE TABLE can be used for such
-
-Types:
-- I/O Constraint
-- Business Rule
-
-1. I/O Constraints
-    - Primary Key
-    - Foreign Key
-
-2. Business Constraints
-    - Column Level
-    - NULL Value
-    - CHECK
-
-## Primary Constraints
-PRIMARY KEY
-- NOT NULL
-- UNIQUE
-
-**Simple Key:** single column primary key
-**Composite Key:** multicolumn primary key
-
-*PRIMARY KEY* is basically used to identify rows uniquely.if it doesn't works,
-define *COMPOSITE KEY*.
-
-### Features Primary Key
-1. Primary key is a column or a set of columns that uniquely identifies a row. Its main purpose is the `Record Uniqueness`
-2. Primary key will not allow duplicate values 
-3. Primary key will also not allow null values
-4. Primary key is not compulsory but it is recommended
-5. Primary key helps to identify one record from another record and also helps in relating tables with one another
-6. Primary key cannot be LONG or LONG RAW data type
-7. Only one Primary key is allowed per table
-8. Unique Index is created automatically if there is a Primary key
-9. One table can combine upto 16 columns in a Composite Primary key
-
-Syntax(at column level):
+#### Prove It
 ```sql
-<ColumnName> <Datatype>(<Size>) PRIMARY KEY
+CREATE TABLE CUST_MSTR2 (
+  CUST_NO VARCHAR2(10) PRIMARY KEY,
+  FNAME   VARCHAR2(25) NOT NULL
+);
 ```
 
-ex: Create a table CUST_MSTR such that the contents of the column CUST_NO is unique and not null.
+#### Gotchas / Edge Cases
+- Constraints exist for data *integrity*, not performance — but the engine usually creates an index behind PK/UNIQUE (see `advanced-sql.md`).
+- A row can be rejected by exactly one constraint at a time — Oracle reports the first failure (e.g. `ORA-00001`, `ORA-01400`, `ORA-02290`); debugging means fixing them one by one.
+
+---
+
+### PRIMARY KEY
+#### Explain It
+A primary key is a column (or set of columns — a *composite* key) that uniquely identifies every row. It combines **NOT NULL + UNIQUE**: no duplicate values, no NULLs. One table can have only one primary key, and Oracle builds a unique index behind it automatically. It is not compulsory, but it is the backbone of relations between tables.
+
+#### Prove It
 ```sql
-DROP TABLE CUST_ MSTR;
-CREATE TABLE CUST_MSTR (
-"CUST_NO" VARCHAR2(10) PRIMARY KEY,
-"FNAME" VARCHAR2(25), "MNAME" VARCHAR2(25),
-"LNAME" VARCHAR2(25), "DOB INC" DATE,
-"OCCUP" VARCHAR2(25), "PHOTOGRAPH" VARCHAR2(25),
-"SIGNATURE" VARCHAR2(25), "PANCOPY" VARCHAR2(1),
-"FORM60" VARCHAR2(1));
+-- single-column PK, column level
+CREATE TABLE CUST_MSTR2 (
+  CUST_NO VARCHAR2(10) PRIMARY KEY,
+  FNAME   VARCHAR2(25),
+  MNAME   VARCHAR2(25),
+  LNAME   VARCHAR2(25)
+);
+
+-- composite PK, table level (up to 16 columns in Oracle)
+CREATE TABLE FD_MSTR3 (
+  FD_SER_NO    VARCHAR2(10),
+  CORP_CUST_NO VARCHAR2(10),
+  AMT          NUMBER(8,2),
+  CONSTRAINT pk_fd3 PRIMARY KEY (FD_SER_NO, CORP_CUST_NO)
+);
+
+INSERT INTO FD_MSTR3 VALUES ('FS1','C1',100);
+INSERT INTO FD_MSTR3 VALUES ('FS1','C1',200);   -- ORA-00001: unique constraint violated
 ```
 
-<br>
+#### Gotchas / Edge Cases
+- No part of a composite PK may be NULL — a partial-NULL insert is rejected (ORA-01400).
+- A primary key column cannot be LONG/LONG RAW, and you get exactly one PK per table.
+- "PK = UNIQUE + NOT NULL" is the standard interview shorthand; UNIQUE alone allows NULLs (next concept).
+- Order of columns in a composite key matters for index-usage: a query filtering only the *second* column can't use the composite index efficiently (see indexes in `advanced-sql.md`).
 
-Syntax(at Table Level):
+---
+
+### UNIQUE
+#### Explain It
+A UNIQUE constraint forbids duplicate values in a column or column set, but — unlike the primary key — it **permits multiple NULLs**. Oracle treats each NULL as "no value", so NULLs never conflict with each other. A table may have several UNIQUE columns, and each gets a unique index automatically.
+
+#### Prove It
 ```sql
-PRIMARY KEY (<ColumnName>, <ColumnName>)
+CREATE TABLE CUST_MSTR2 (
+  CUST_NO VARCHAR2(10) PRIMARY KEY,
+  FNAME   VARCHAR2(25) NOT NULL,
+  LNAME   VARCHAR2(25) UNIQUE          -- table level: UNIQUE (FNAME, LNAME)
+);
+
+INSERT INTO CUST_MSTR2 VALUES ('C2', 'Nelson', NULL);
+INSERT INTO CUST_MSTR2 VALUES ('C3', 'Maya',   NULL);  -- multiple NULLs: allowed
+INSERT INTO CUST_MSTR2 VALUES ('C4', 'Dup',    'Bayross'); -- ORA-00001: duplicate rejected
 ```
-ex: table FD_MSTR where there is a composite primary key mapped to the columns FD_SER_NO and CORP_CUST_NO.
+
+#### Gotchas / Edge Cases
+- "How many NULLs does UNIQUE allow?" — multiple, in Oracle/Postgres/MySQL; the SQL standard leaves it vendor-defined, so answer "Oracle: many, because NULL != NULL" and note the dialect dependence.
+- This is THE difference between PRIMARY KEY and UNIQUE, and it is the most-asked constraints interview question.
+- UNIQUE also works as a composite (up to 16 columns in Oracle) and cannot use LONG/LONG RAW.
+
+---
+
+### FOREIGN KEY
+#### Explain It
+A foreign key is a column (or group) whose values must exist as a PRIMARY KEY or UNIQUE value in another (or the *same*) table. The table holding the FK is the child/detail table; the referenced one is the parent/master table. The parent record cannot be deleted or its key changed while child rows reference it — unless you declare `ON DELETE CASCADE` (delete the children too) or `ON DELETE SET NULL` (blank the child's FK).
+
+#### Prove It
 ```sql
-DROP TABLE FD MSTR;
-CREATE TABLE "DBA_BANKSYS"."FD_MSTR"(
-"ED SER NO" VARCHAR2(10), "SF_NO" VARCHAR2(10),
-"BRANCH NO" VARCHAR2(10), "INTRO_CUST_NO" VARCHAR2(10),
-"INTRO. ACCT_NO" VARCHAR2(10), "INTRO_SIGN" VARCHAR2(1),
-"ACCT NO" VARCHAR2(10), "TITLE" VARCHAR2(30),
-"CORP CUST NO" VARCHAR2(10), "CORP_CNST_TYPE" VARCHAR(4),
-"VERI EMP NO" VARCHAR2(10), "VERL SIGN" VARCHAR2(1),
-"MANAGER SIGN" VARCHAR2(1), PRIMARY KEY(FD_SER NO, CORP_CUST_NO));
+-- column level: EMP_MSTR.BRANCH_NO must exist in BRANCH_MSTR
+CREATE TABLE EMP_MSTR2 (
+  EMP_NO    VARCHAR2(10) PRIMARY KEY,
+  BRANCH_NO VARCHAR2(10) REFERENCES BRANCH_MSTR(BRANCH_NO)
+);
+INSERT INTO EMP_MSTR2 VALUES ('E1', 'B1');   -- ok
+INSERT INTO EMP_MSTR2 VALUES ('E9', 'B99');  -- ORA-02291: parent key not found
+
+-- table level + cascade
+CREATE TABLE FD_DTLS2 (
+  FD_SER_NO VARCHAR2(10),
+  FD_NO     VARCHAR2(10),
+  AMT       NUMBER(8,2),
+  CONSTRAINT fk_fd2 FOREIGN KEY (FD_SER_NO) REFERENCES FD_MSTR2(FD_SER_NO)
+    ON DELETE CASCADE
+);
+DELETE FROM FD_MSTR2 WHERE FD_SER_NO = 'FS1';  -- children deleted automatically
+
+-- SET NULL variant
+CREATE TABLE FD_DTLS3 (
+  FD_SER_NO VARCHAR2(10),
+  AMT       NUMBER(8,2),
+  CONSTRAINT fk_fd3 FOREIGN KEY (FD_SER_NO) REFERENCES FD_MSTR2(FD_SER_NO)
+    ON DELETE SET NULL
+);
+DELETE FROM FD_MSTR2 WHERE FD_SER_NO = 'FS2';  -- child FD_SER_NO becomes NULL
 ```
 
-## Foreign Key
-A foreign key is a column (or a group of columns) whose values are derived from the primary key or unique key of some other table.
-The table in which the foreign key is defined is called a Foreign table or Detail table. 
-The table that defines the primary or unique key and is referenced by the foreign key is called the Primary table or Master table.
+#### Gotchas / Edge Cases
+- The referenced column must be PRIMARY KEY or UNIQUE; data types must match.
+- The child side may contain NULLs and duplicates — only *present* values must exist in the parent.
+- **Oracle has no `ON UPDATE CASCADE`** (unlike MySQL/Postgres): changing a parent key requires manual updates or delete+reinsert. A favorite dialect trap.
+- Without any `ON DELETE` clause, Oracle's default is to block the parent delete when children exist (ORA-02292).
+- A self-referencing FK is how employee→manager hierarchies are modeled (see SELF JOIN in `joins.md`).
 
-Features of Foreign Keys
-1. Foreign key is a column(s) that references a column(s) of a table and it can be the same table also
-2. Parent that is being referenced has to be unique or Primary key
-3. Child may have duplicates and nulls but unless it is specified
-4. Foreign key constraint can be specified on child but not on parent
-5. Parent record can be delete provided no child record exist
-6. Master table cannot be updated if child record exist
+---
 
-**Note:** A foreign key must have a corresponding primary key or unique key value in the master table.
-**Note:** displays an error message when a record in the master table is deleted and corresponding records exists in a detail table and prevents the delete operation from going through.
+### NOT NULL and the NULL Concept
+#### Explain It
+`NULL` means "unknown / not applicable" — it is *not* the empty string and *not* zero. A NOT NULL constraint makes a column mandatory: the row is rejected if no value is supplied. Notice that in Oracle, an empty string `''` is treated exactly like NULL, so `''` also fails a NOT NULL column.
 
-### Principles:
-- Rejects an INSERT or UPDATE of a value, if a corresponding value does not currently exist in the master key table
-- If the ON DELETE CASCADE option is set, a DELETE operation in the master table will trigger a DELETE operation for corresponding records in all detail tables
-- Ifthe ON DELETE SET NULL option is set, a DELETE operation in the master table will set the value held by the foreign key of the detail tables to null
-- Rejects a DELETE from the Master table if corresponding records in the DETAIL table exist
-- Must reference a PRIMARY KEY or UNIQUE column(s) in primary table
-- Requires that the FOREIGN KEY column(s) and the CONSTRAINT column(s) have matching data types
-- Can reference the same table named in the CREATE TABLE statement
-
-Syntax(at Column Level):
+#### Prove It
 ```sql
-<ColumnName> <DataType>(<Size>)
-REFERENCES <TableName> [(<ColumnName>)]
-[ON DELETE CASCADE]
-```
-ex: `DROP TABLE EMP_MSTR;
-CREATE TABLE "DBA_BANKSYS"."EMP_MSTR"(
-"EMP. NO" VARCHAR2(10) PRIMARY KEY,
-"BRANCH. NO" VARCHAR2(10) REFERENCES BRANCH _ MSTR,
-"FNAME" VARCHAR2(25), "MNAME" VARCHAR2(25),
-"LNAME" VARCHAR2(25), "DEPT" VARCHAR2(30),
-"DESIG" VARCHAR2(30));`
+CREATE TABLE NULL_PROBE (ID NUMBER, NOTE VARCHAR2(10));
+INSERT INTO NULL_PROBE VALUES (1, NULL);   -- allowed: NOTE is nullable
+SELECT * FROM NULL_PROBE;                  -- NOTE displays blank (NULL)
 
-Syntax(at Table Level):
+CREATE TABLE CUST_MSTR4 (
+  CUST_NO VARCHAR2(10) PRIMARY KEY,
+  FNAME   VARCHAR2(25) NOT NULL
+);
+INSERT INTO CUST_MSTR4 (CUST_NO, FNAME) VALUES ('C5', NULL);  -- ORA-01400: cannot insert NULL
+```
+
+#### Gotchas / Edge Cases
+- `WHERE col = NULL` never matches; use `IS NULL` (full treatment in `10-interview-questions.md`).
+- Oracle collapses `''` to NULL — in PostgreSQL `''` is a real empty string. A classic cross-dialect interview surprise.
+- PRIMARY KEY columns are implicitly NOT NULL; UNIQUE columns are not.
+- NULL propagates through arithmetic: `NULL + 1000` is `NULL` (see `computations.md`).
+
+---
+
+### CHECK
+#### Explain It
+A CHECK constraint validates a row with a Boolean expression that must evaluate to TRUE (NULL results are accepted — "unknown" doesn't fail). It is the engine-level version of application validation: format rules (`CUST_NO LIKE 'C%'`), domain rules (`AMT > 0`), cross-column rules (`start < end`). It can be declared at column or table level, and named for readable errors.
+
+#### Prove It
 ```sql
-FOREIGN KEY (<ColumnName> [,<ColumnName>] )
-    REFERENCES <TableName> [(<ColumnName>, <ColumnName >)
+CREATE TABLE CUST_MSTR3 (
+  CUST_NO VARCHAR2(10),
+  FNAME   VARCHAR2(25),
+  MNAME   VARCHAR2(25),
+  LNAME   VARCHAR2(25),
+  CONSTRAINT chk_cust CHECK (CUST_NO LIKE 'C%'),
+  CONSTRAINT chk_fn   CHECK (FNAME = UPPER(FNAME))
+);
+INSERT INTO CUST_MSTR3 VALUES ('C1', 'IVAN', 'N', 'BAYROSS');  -- ok
+INSERT INTO CUST_MSTR3 VALUES ('X1', 'IVAN', 'N', 'BAYROSS');  -- ORA-02290: CHECK violated
 ```
 
-ex: `DROP TABLE ACCT FD CUST_DTLS;
-CREATE TABLE "DBA_BANKSYS"."ACCT_FD CUST_DTLS"(
-"ACCT FD NO" VARCHAR2(10), "CUST_NO" VARCHAR2(10),
-FOREIGN KEY (CUST_NO) REFERENCES CUST_MSTR(CUST_NO));`
+#### Gotchas / Edge Cases
+- Oracle CHECK conditions **cannot** contain subqueries, sequences, or the pseudocolumns `SYSDATE`, `UID`, `USER`, `USERENV` — it must be evaluable from the row's own values alone.
+- A CHECK that evaluates to NULL (e.g. any row where the checked column is NULL) **passes** — "fail" only happens on FALSE. This trips people up in interviews.
+- CHECKs are per-row: they never compare against other rows or tables — that job belongs to FK/triggers.
 
-Syntax(With ON DELETE CASCADE)
+---
+
+### Column-Level vs Table-Level Constraints
+#### Explain It
+A constraint is *column-level* when written inline with its column's definition, and *table-level* when written after all columns. Column-level is fine for single-column rules (NOT NULL, a UNIQUE column); table-level is required for composite keys (multi-column PK/FK/UNIQUE/CHECK) and for naming your constraints via `CONSTRAINT name ...`.
+
+#### Prove It
 ```sql
-CREATE TABLE "DBA_BANKSYS"."FD_DTLS"(
-"FD_SER_NO" VARCHAR2(10), "FD_NO" VARCHAR2(10),
-"TYPE" VARCHAR2(1), "PAYTO_ACCTNO" VARCHAR2(10),
-"PERIOD" NUMBER(S), "OPNDT" DATE,
-"DUEDT" DATE, "AMT" NUMBER(8,2),
-"DUEAMT" NUMBER(8,2), "INTRATE" NUMBER(3),
-"STATUS" VARCHAR2(1) DEFAULT 'A', "AUTO RENEWAL" VARCHAR2(1) ,
-CONSTRAINT f FDSerNoKey
-FOREIGN KEY (FD_SER_NO) REFERENCES FD _MSTR(FD SER NO)
-ON DELETE CASCADE), .
+-- column level
+CREATE TABLE T1 (ID NUMBER PRIMARY KEY, EMAIL VARCHAR2(30) UNIQUE);
+
+-- table level (needed for the composite PK; also lets you name it)
+CREATE TABLE T2 (
+  A VARCHAR2(10),
+  B VARCHAR2(10),
+  CONSTRAINT pk_t2 PRIMARY KEY (A, B)
+);
 ```
 
-Syntax(with ON DELETE SET NULL):
-```sql
-DROP TABLE FD DTLS:
-CREATE TABLE "DBA_BANKSYS"."FD_DTLS"(
-"FD SER NO" VARCHAR2(10), "FD_NO" VARCHAR2(10), "TYPE" VARCHAR2(1),
-"PAYTO_ACCTNO" VARCHAR2(10), "PERIOD" NUMBER(S), "OPNDT" DATE,
-"DUEDT" DATE, "AMT" NUMBER(8,2), "DUEAMT" NUMBER(8,2), "INTRATE" NUMBER(3),
-"STATUS" VARCHAR2(1) DEFAULT 'A', "AUTO_RENEWAL" VARCHAR2(1) ,
-CONSTRAINT f FDSerNoKey
-FOREIGN KEY (FD_SER_NO) REFERENCES FD _MSTR(FD_SER_NO)
-ON DELETE SET NULL);
-```
-
-### Assigning User Defined Names To Constraints
-```sql
-CONSTRAINT <Constraint Name> <Constraint Definition>
-```
-Ex: 
-```sql
-CREATE TABLE CUST_MSTR (
-"CUST_NO" VARCHAR2(10) CONSTRAINT p CUSTKey PRIMARY KEY,
-"FNAME" VARCHAR2(25), "MNAME" VARCHAR2(25),
-"LNAME" VARCHAR2(25), "DOB_INC" DATE,
-"OCCUP" VARCHAR2(25), "PHOTOGRAPH" VARCHAR2(25),
-"SIGNATURE" VARCHAR2(25), "PANCOPY" VARCHAR2(1),
-"FORM60" VARCHAR2(1));
-```
-
-## Unique Key
-permits multiple entries of NULL into the column.
-clubbed at the top of the column in the order in which they were entered into the table. This is the
-essential difference between the Primary Key and the Unique constraints when applied to table column(s).
-
-1. Unique key will not allow duplicate values
-2. Unique index is created automatically
-3. A table can have more than one Unique key which is not possible in Primary key
-4. Unique key can combine upto 16 columns in a Composite Unique key
-5. Unique key can not be LONG or LONG RAW data type
-
-### UNIQUE Constraint Defined At The Column Level
-```sql 
-<ColumnName> <Datatype>(<Size>) UNIQUE
-```
-
-### UNIQUE Constraint Defined At The Table Level
-```sql
-CREATE TABLE TableName
-(<ColumnName1> <Datatype>(<Size>), <ColumnName2> < Datatype >(<Size>),
-UNIQUE (<ColumnName1>, <ColumnName2>));
-```
-ex: 
-```sql
-CREATE TABLE CUST_MSTR (
-"CUST_NO" VARCHAR2(10), "FNAME" VARCHAR2(25),
-"MNAME" VARCHAR2(25), "LNAME" VARCHAR2(25),
-"DOB_INC" DATE, "OCCUP" VARCHAR2(25),
-"PHOTOGRAPH" VARCHAR2(25), "SIGNATURE" VARCHAR2(25),
-"PANCOPY" VARCHAR2(1), "FORM60" VARCHAR2(1),
-UNIQUE(CUST_NO));
-```
-
-## Business Rule contraints
-Data Integrity Constraints: Ensure that data entered into a system is accurate and consistent. For example, ensuring that a customer's age is within a reasonable range or that a product's price is a positive number.
-
-Validation Rules: Validate input data against specific criteria. This could include format validation (e.g., ensuring an email address is correctly formatted) or logical validation (e.g., ensuring start dates are before end dates).
-
-Mandatory Fields: Specify that certain fields must be populated with data before a record can be saved. For instance, requiring a customer's name and contact information before creating a new account.
-
-Unique Constraints: Ensure that certain data values are unique within a dataset. For example, ensuring that each username in a system is unique to avoid duplicate accounts.
-
-Referential Integrity: Maintain consistency between related data in different tables. For instance, ensuring that a product record cannot be deleted if there are active orders referencing that product.
-
-Business Process Constraints: Define rules that guide how business processes should be executed. This could include approval workflows, escalation rules for unresolved issues, or specific sequences of actions.
-
-Regulatory Compliance: Ensure that data handling and processing adhere to legal and regulatory requirements. This might involve data privacy laws, financial regulations, or industry-specific standards.
-
-# Column Level Constraints
-If data constraints are defined as an attribute of a column definition when creating or altering a table structure, they are column level constraints.
-
-# Table Level Constraints
-If data constraints are defined after defining all table column attributes when creating or altering a table structure, it is a table level constraint.
-    - NOT NULL as column constraint. The NOT NULL column constraint ensures that a table column cannot be left empty.
-        When a column is defined as not null, then that column becomes a mandatory column. It implies that a value must be entered into the column if the record is to be accepted for storage in the table.
-        Syntax: `<ColumnName> <Datatype>(<Size>) NOT NULL`
-
-# NULL Value Concept
-when we don't know what to put in a cell i.e. no such defined type or data we
-use null for it-> `INSERT INTO BRANCH_MSTR (BRANCH_NO, NAME) VALUES(BI', null);`
-
-# NOT NULL 
-The `NOT NULL` column constraint ensures that a table column cannot be left empty.
-```sql
-<ColumnName> <Datatype>(<Size>) NOT NULL
-```
-# CHECK
-Business Rule validations can be applied to a table column
-CHECK constraints must be specified as a logical expression that evaluates either to TRUE or FALSE.
-
-```sql
-<ColumnName> <Datatype>(<Size>) CHECK (<Logical Expression>)
-```
-
-ex:
-```sql
-REATE TABLE CUST_MSTR("CUST_NO" VARCHAR2(10) CHECK(CUST_NO LIKE 'C%'),
-"FNAME" VARCHAR2(25) CHECK (FNAME = UPPER(FNAME)),
-"WNAME" VARCHAR2(25) CHECK (MNAME = UPPER(MNAME)),
-"LNAME" VARCHAR2(25) CHECK (LNAME = UPPER(LNAMB)), "DOB _ INC" DATE,
-"QCCUP" VARCHAR2(25), "PHOTOGRAPH" VARCHAR2(25), "SIGNATURE" VARCHAR2(25),
-"PANCOPY" VARCHAR2(1), "FORM60" VARCHAR2(1));
-```
-
-## At Table Level
-```sql
-CHECK (<Logical Expression>)
-```
-
-ex:
-```sql
-CREATE TABLE CUST_MSTR("'CUST_NO" VARCHAR2(10), "FNAME" VARCHAR2(25),
-"MNAME" VARCHAR2(25), "LNAME" VARCHAR2(25), "DOB_INC" DATE,
-"OCCUP" VARCHAR2(25), "PHOTOGRAPH" VARCHAR2(25), "SIGNATURE" VARCHAR2(25),
-"PANCOPY" VARCHAR2(1), "FORM60" VARCHAR2(1),
-CHECK (CUST_NO LIKE ‘C%’), CHECK (FNAME = UPPER(FNAME)),
-CHECK (MNAME = UPPER(MNAME)), CHECK (LNAME = UPPER(LNAME)));
-```
-
-Insert operation can be performed to validate: `INSERT INTO CUST_MSTR (CUST_NO, FNAME, MNAME, LNAME, DOB_INC, OCCUP, PHOTOGRAPH,
-SIGNATURE, PANCOPY, FORM60)
-VALUES('014', 'SHARANAM', 'CHAITANYA‘, 'SHAH’, '03-Jan-1981', Business’, null, null, 'N', 'Y');`
-
-
-# Restriction/Limitation
-- The condition must be a Boolean expression that can be evaluated using the values in the row being inserted or updated.
-- The condition cannot contain subqueries or sequences.
-- The condition cannot include the SYSDATE, UID, USER or USERENV SQL functions.
-
-
+#### Gotchas / Edge Cases
+- NOT NULL can only be column-level in classic Oracle (12c+ allows table-level `NOT NULL` with new syntax — don't rely on it).
+- Named constraints produce readable error/validation messages and can be dropped by name (`ALTER TABLE t DROP CONSTRAINT pk_t2;`); unnamed ones get auto-generated names like `SYS_C008877`.
+- "Column vs table level" is a stock interview question — the short answer is composite keys force table-level.
