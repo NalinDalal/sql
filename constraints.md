@@ -121,6 +121,37 @@ DELETE FROM FD_MSTR2 WHERE FD_SER_NO = 'FS2';  -- child FD_SER_NO becomes NULL
 
 ---
 
+### Self-Referencing Foreign Key
+#### Explain It
+A **self-referencing foreign key** is a FK that points to the **primary key of the same table**. It models one-to-many hierarchies inside a single table — the classic example being an employee table where each row's `MNGR_NO` references another row's `EMP_NO` in the same table. The root of the hierarchy (the CEO) has a NULL manager; every other row points to its parent.
+
+#### Prove It
+```sql
+CREATE TABLE emp_hierarchy (
+  emp_no    VARCHAR2(10) PRIMARY KEY,
+  fname     VARCHAR2(25),
+  mname     VARCHAR2(25),
+  lname     VARCHAR2(25),
+  mgr_no    VARCHAR2(10),
+  CONSTRAINT fk_mgr FOREIGN KEY (mgr_no)
+    REFERENCES emp_hierarchy(emp_no)
+    ON DELETE SET NULL
+);
+
+INSERT INTO emp_hierarchy VALUES ('E1', 'CEO', NULL, 'Boss', NULL);       -- root
+INSERT INTO emp_hierarchy VALUES ('E2', 'Mgr', 'A', 'Smith', 'E1');       -- reports to E1
+INSERT INTO emp_hierarchy VALUES ('E3', 'Dev', 'B', 'Jones', 'E2');       -- reports to E2
+-- E2 is both a child (of E1) and a parent (of E3) — the hierarchy lives in one table
+```
+
+#### Gotchas / Edge Cases
+- The root node must have a NULL `mgr_no` — otherwise the FK check fails because `NULL` cannot reference a real key.
+- `ON DELETE CASCADE` on a self-referencing FK can cause a **cascade chain** (deleting the CEO deletes the whole org); `ON DELETE SET NULL` is safer for hierarchies.
+- A self-referencing FK does not enforce hierarchy depth or prevent cycles — it only enforces that every non-NULL value exists in the same table. Use `CONNECT BY NOCYCLE` or application logic to prevent loops.
+- The `joins.md` self-join query walks one level at a time; unlimited depth needs `CONNECT BY` (see `advance-feat.md`).
+
+---
+
 ### NOT NULL and the NULL Concept
 #### Explain It
 `NULL` means "unknown / not applicable" — it is *not* the empty string and *not* zero. A NOT NULL constraint makes a column mandatory: the row is rejected if no value is supplied. Notice that in Oracle, an empty string `''` is treated exactly like NULL, so `''` also fails a NOT NULL column.
