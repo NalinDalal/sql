@@ -190,6 +190,30 @@ WHERE B.BRANCH_NO = E.BRANCH_NO AND E.DEPT = 'MIS';
 
 ---
 
+### Natural Join vs Equijoin
+#### Explain It
+An **equijoin** is any join whose condition uses only equality (`ON a.col = b.col`). A **natural join** (`NATURAL JOIN`) is a shorthand equijoin where Oracle automatically matches *all* columns with the same name in both tables — no `ON` clause needed. Because the matching is implicit, `NATURAL JOIN` is risky in production: adding a column with the same name to both tables silently changes the join semantics.
+
+#### Prove It
+```sql
+-- equijoin: explicit, safe, the standard form
+SELECT E.EMP_NO, B.NAME, B.BRANCH_NO
+FROM EMP_MSTR E JOIN BRANCH_MSTR B ON B.BRANCH_NO = E.BRANCH_NO;
+
+-- natural join: Oracle matches all identically-named columns automatically
+SELECT EMP_NO, NAME, BRANCH_NO
+FROM EMP_MSTR NATURAL JOIN BRANCH_MSTR;
+-- equivalent to the equijoin above ONLY because BRANCH_NO is the only shared name
+```
+
+#### Gotchas / Edge Cases
+- `NATURAL JOIN` matches **every** column with the same name in both tables — if both tables gain a `STATUS` column later, the join suddenly filters on `STATUS` too, with no code change.
+- Oracle supports `NATURAL LEFT JOIN` / `NATURAL RIGHT JOIN`; the implicit matching still applies.
+- Most style guides ban `NATURAL JOIN` in production for the reason above — "explicit is better than implicit" is the interview-safe line.
+- `USING(col)` is a compromise: it declares the join column(s) explicitly but lets you reference them without a table qualifier (`SELECT col ...` not `SELECT a.col ...`).
+
+---
+
 ### Joining Multiple Tables
 #### Explain It
 Joins chain: the result of one join becomes the input of the next, so three, four or more tables can be linked in sequence. In a bank schema, customer → account-customer link → account → branch is a typical 4-way chain built entirely from FKs.
