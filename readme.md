@@ -1,59 +1,36 @@
-# DATABASE
+# SQL Interview Prep — Module Map
 
-It is used to store something with many use cases
-SQL is languages of database
+> **Dialect note:** All files in this repo use **Oracle/PL-SQL** as the primary dialect, except `2.installation.md` which uses Postgres for local setup steps (noted at the top of that file).
 
+---
 
-[introduction](./1.intro.md)
-    intro, types, languages & types, normalisation
+## Module Table
 
-[installing database and initialisation](./2.installation.md)
-    database install
+| Topic                                        | Concepts covered                                                               | Key file              |
+| -------------------------------------------- | ------------------------------------------------------------------------------ | --------------------- |
+| Introduction and Normalisation                | 1NF, 2NF, 3NF, BCNF; SQL basics; data vs DB vs RDBMS                          | `1.intro.md`          |
+| Local Installation                           | Postgres install (Docker), user/db creation, tablespaces                       | `2.installation.md`   |
+| SQL Commands                                 | DDL, DML, DCL, DQL, TCL; `FETCH FIRST`, `DESCRIBE`, schema model               | `sql-cmd.md`          |
+| Constraints                                  | PK, UNIQUE, FK, NOT NULL, CHECK; column-vs-table level; NULL behaviour         | `constraints.md`      |
+| Computations                                 | Arithmetic, aggregates, numeric/string/date/conversion functions, COALESCE      | `computations.md`     |
+| Data Grouping                                | GROUP BY, HAVING, ROLLUP, subqueries (IN, inline view, correlated)             | `data-grouping.md`    |
+| Joins                                        | INNER, LEFT, RIGHT, FULL OUTER, CROSS; ANSI vs theta; set ops (UNION/INTERSECT/MINUS) | `joins.md`       |
+| Advanced SQL                                 | B-tree indexes (when to use and avoid), views, clusters, sequences, snapshots/MVs, ROWID, ROWNUM | `advanced-sql.md` |
+| Advanced Features                            | DECODE, NVL, SOUNDEX, hierarchical queries, date arithmetic, ALTER USER, JSP   | `advance-feat.md`     |
+| OOPs in SQL                                  | Object types, VARRAYs, nested tables, REFs, object views                       | `oops.md`             |
+| PL/SQL Basics                                | Block structure, variables, control structures, cursors, exception handling     | `pl-sql.md`           |
+| Transactions                                 | COMMIT/ROLLBACK/SAVEPOINT, ACID, vendor isolation-level matrix, anomalies       | `transactions.md`     |
+| Security Management                          | GRANT/REVOKE, roles, PUBLIC, WITH GRANT OPTION, privilege chains                | `permissions.md`      |
+| Locking, Deadlock, Exceptions                | Row/table locks, SELECT FOR UPDATE, deadlock detection, named/user-defined exceptions | `security.md` |
+| Database Objects                             | Procedures, functions, packages, overloading, package state                     | `db-obj.md`           |
+| SQL*Plus Environment                         | `SERVEROUTPUT`, `AUTOTRACE`, substitution variables, `LINESIZE`; variable reference table | `ctrl-cmds.md` |
+| 10 Interview Questions                       | Normalisation, joins, indexes, isolation levels, constraints, procedures, TRUNCATE, ROWNUM, GROUP BY, DECODE | `10-interview-questions.md` |
 
-[control commands](./ctrl-cmds.md)
-    sql environment variables; saw sample er model
+---
 
-[sql-cmds](./sql-cmd.md)
-    sql commands
+## Quick Links
 
-[Constraints](./constraints.md)
-    sql contraints
-
-[Computations](./computations.md)
-    Computations and Maths on SQL
-
-[data-grouping](./data-grouping.md)
-    Group Similar Data
-
-[Joins](./joins.md)
-    Used to manipulate similar data from multiple tables
-
-[Advanced SQL](./advanced-sql.md)
-    Advanced SQL queries
-
-[SECURITY MANAGEMENT USING SQL](./permissions.md)
-    Granting and Revoking Permissions
-
-[OOPs](./oops.md)
-
-[Advanced Features in SQL*](./advance-feat.md)
-
-[PL/SQL](./pl-sql.md)
-    procedural language for SQL
-
-[Transactions](./transactions.md)
-    Transactions in SQL
-
-[PL/SQL Security](./security.md)
-
-[PL/SQL DataBase Objects](./db-obj.md)
-
-
------
-
-[video course of 30 hours](https://www.youtube.com/watch?v=SSKVgrwhzus&list=WL&index=1&t=1533s) to do side-by-side and [official doc](https://www.postgresql.org/docs/current/sql.html)
-
-ddl commands: 1hr:32min
-
-[video resources](https://github.com/DataWithBaraa/sql-ultimate-course)
-[dataset](https://github.com/DataWithBaraa/sql-ultimate-course/tree/main/datasets/sql-server)
+- [Video course (30 hrs)](https://www.youtube.com/watch?v=SSKVgrwhzus&list=WL&index=1&t=1533s) — do side-by-side
+- [Official Oracle SQL Reference](https://www.postgresql.org/docs/current/sql.html)
+- [Video resources](https://github.com/DataWithBaraa/sql-ultimate-course)
+- [Dataset](https://github.com/DataWithBaraa/sql-ultimate-course/tree/main/datasets/sql-server)
