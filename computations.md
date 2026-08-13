@@ -96,6 +96,32 @@ SELECT COUNT(DISTINCT ITEM) FROM ORDERS; -- distinct item names
 
 ---
 
+### String Aggregation: LISTAGG
+#### Explain It
+`LISTAGG(expr, delimiter) WITHIN GROUP (ORDER BY sort_expr)` concatenates values from multiple rows into a single delimited string — Oracle's answer to MySQL's `GROUP_CONCAT()` and PostgreSQL's `string_agg()`. The `WITHIN GROUP` clause controls the order of concatenation; omit it and the order is nondeterministic.
+
+#### Prove It
+```sql
+-- all product names per category, comma-separated
+SELECT category,
+       LISTAGG(product_name, ', ') WITHIN GROUP (ORDER BY product_name) AS products
+  FROM products
+ GROUP BY category;
+
+-- employee names per department, pipe-separated
+SELECT dept_id,
+       LISTAGG(emp_name, ' | ') WITHIN GROUP (ORDER BY emp_name) AS team
+  FROM emp_mstr
+ GROUP BY dept_id;
+```
+
+#### Gotchas / Edge Cases
+- `LISTAGG` overflows at 4000 bytes in SQL context (32767 in PL/SQL) — `ORA-01489: result of string concatenation is too long`. Use `ON OVERFLOW TRUNCATE` (Oracle 12c R2+) or `XMLAGG` for longer strings.
+- `ORDER BY` inside `WITHIN GROUP` is optional but almost always needed — without it the concatenation order is unpredictable.
+- MySQL `GROUP_CONCAT()` and PostgreSQL `string_agg()` are the cross-vendor equivalents; `LISTAGG` is Oracle-only syntax.
+
+---
+
 ### Numeric Functions
 #### Explain It
 Oracle's numeric functions: `ABS` (absolute), `POWER(m,n)` (m^n), `ROUND(n[,m])` (round to m decimals, default 0), `SQRT`, `EXP` (e^n), `MOD(m,n)` (remainder; returns m when n is 0), `TRUNC(n[,m])` (cut, not round — works with negative m), `FLOOR` (round down), `CEIL` (round up), `GREATEST`/`LEAST` (largest/smallest across a list), and `EXTRACT` (pull a date part).
