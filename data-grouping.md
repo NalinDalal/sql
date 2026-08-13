@@ -1,120 +1,101 @@
 # Grouping Data From SQL Tables
 
-**GROUP BY**
-GROUP BY clause is another section of the select statement. 
+> **Dialect note:** Oracle (ROLLUP syntax, `||` concat).
 
-The `GROUP BY` clause creates a data
-set, containing several sets of records grouped together based on a condition.
+### GROUP BY
+#### Explain It
+`GROUP BY` collapses rows into groups that share the same values in the listed columns, so each group can be summarized with an aggregate function (COUNT, SUM, AVG...). Every column in the `SELECT` list must either be one of the grouping columns or appear inside an aggregate — anything else is an error. Rows are grouped *after* `WHERE` filtering, so WHERE cannot see aggregates.
+
+#### Prove It
 ```sql
-SELECT <ColumnName!>, <ColumnName2>, <ColumnNameN>,
-AGGREGATE_FUNCTION (<Expression>)
-FROM TableName WHERE <Condition>
-GROUP BY <ColumnNamel>, <ColumnName2>, <ColumnNameN>;
+SELECT BRANCH_NO, COUNT(ACCT_NO) AS NO_OF_ACCTS
+FROM ACCT_MSTR
+GROUP BY BRANCH_NO;
 ```
 
-example:
-|Tables:|ACCT MSTR|
-|-------|---------|
-|Columns:|BRANCH_NO, TYPE,_ACCT_NO|
-|--------|-------------------------|
-|Technique:|Functions: COUNT(), Clauses: GROUP BY, Others: Alias|
+#### Gotchas / Edge Cases
+- "SELECT a column that isn't grouped" → `ORA-00979: not a GROUP BY expression` — the classic compile error interviewers ask about.
+- `WHERE` runs before grouping: to filter *groups*, use HAVING (next concept). To filter rows before grouping, use WHERE — do not put both in HAVING.
+- NULLs in the grouping column form their own group — a group of "unknown" values appears in the result.
 
+---
+
+### HAVING — Filtering Groups
+#### Explain It
+HAVING applies a condition to the *groups* created by GROUP BY, keeping only groups whose aggregate result satisfies the test. WHERE filters rows before grouping; HAVING filters groups after aggregation — that ordering is the single most-asked GROUP BY interview question.
+
+#### Prove It
 ```sql
-SELECT BRANCH_NO "Branch No.", TYPE "A/C Type", COUNT(ACCT_NO) "No. Of A/Cs"
-FROM ACCT MSTR GROUP BY BRANCH _NO, TYPE;
+-- customers holding more than one account/FD
+SELECT CUST_NO, COUNT(ACCT_FD_NO) AS NO_OF_ACCTS_HELD
+FROM ACCT_FD_CUST_DTLS
+WHERE ACCT_FD_NO LIKE 'CA%' OR ACCT_FD_NO LIKE 'SB%'
+GROUP BY CUST_NO
+HAVING COUNT(ACCT_FD_NO) > 1;
+
+-- customers holding exactly one account/FD
+SELECT CUST_NO, COUNT(ACCT_FD_NO) AS NO_HELD
+FROM ACCT_FD_CUST_DTLS
+GROUP BY CUST_NO
+HAVING COUNT(ACCT_FD_NO) = 1;
 ```
 
-**HAVING**
-HAVING clause can be used in conjunction with the GROUP BY clause. 
-HAVING imposes a condition on the GROUP BY clause, which further filters the groups created by the GROUP BY clause.
+#### Gotchas / Edge Cases
+- `WHERE COUNT(...) > 1` is a syntax error — aggregates are not allowed in WHERE; that is HAVING's job.
+- HAVING can use columns not in the SELECT list (`HAVING COUNT(*) > 5` works); columns must still be grouped if non-aggregated.
+- Both may appear in one query: WHERE strips rows (cheap, early), HAVING strips groups (expensive, late) — pushing filter conditions into WHERE is a classic performance tip.
 
-Find out the customers having more than one account in the bank.
-|Tables:|ACCT_FD_CUS_DTLS|
-|Columns:|CUST NO, ACCT_FD NO|
-|Technique:|unctions: COUNT(), Operators: LIKE, OR, Clauses: GROUP BY ... HAVING,Others: Alias|
+---
 
-```sql
-SELECT CUST_NO, COUNT(ACCT_FD_ NO) "No. Of A/Cs Held" FROM ACCT FD CUST DTLS
-WHERE ACCT FD NO LIKE 'CA%' OR ACCT FD NO LIKE 'SB%'
-GROUP BY CUST_ NO HAVING COUNT(ACCT FD _NO)>1;
-```
+### ROLLUP — Subtotals and Grand Total
+#### Explain It
+`ROLLUP` extends GROUP BY with subtotal rows: for each grouping level it adds a row with the running aggregate, ending with a grand total row (shown as NULLs in the rolled-up columns). It is the engine's built-in "report with subtotals" — Oracle and Postgres write `GROUP BY ROLLUP(a, b)`; MySQL writes `GROUP BY a, b WITH ROLLUP`.
 
-determining whether they are unique or not
-Snopsis: 
-|Tables: ACCT_FD_CUST_DTLS| 
-|Columns: CUST_NO.ACCT_FD_NO|
-|Technique: Functions: COUNT(), Clauses: GROUP BY ... HAVING, Others: Alias|
-
-```sql
-SELECT CUST_NO, COUNT(ACCT_FD NO) "No. Of A/Cs Or FDs Held"
-FROM ACCT_FD_CUST_DTLS GROUP BY CUST_ NO HAVING COUNT(ACCT_FD NO) =1;
-```
-
-**Group By Using The ROLLUP Operator**
-used to calculate aggregates and super aggregates for expressions within a
-GROUP BY statement.
-
-
-|Tables: FD_MSTR |
-|Column: FD_SER_NO, FD_NO, AMT, DUEAMT|
-|Functions: SUM(), Operators: ROLLUP(), Clauses: GROUP BY|
-
+#### Prove It
 ```sql
 SELECT FD_SER_NO, FD_NO, SUM(AMT), SUM(DUEAMT)
-FROM FD_DTLS GROUP BY ROLLUP (FD_SER NO, FD_NO);
+FROM FD_DTLS
+GROUP BY ROLLUP (FD_SER_NO, FD_NO);
+-- last rows: subtotal per FD_SER_NO, then one grand-total row
 ```
 
-# SUBQUERIES/NESTED Queries
-they are queries that appear inside some other query; used for:
-- To insert records in a target table
-- To create tables and insert records in the table created
-- To update records ina target table
-- To create views
-- To provide values for conditions in WHERE, HAVING, IN and so on used with SELECT, UPDATE, and DELETE statements
+#### Gotchas / Edge Cases
+- Subtotals look like normal rows with NULL in the grouped columns — applications must know to interpret NULLs there as "subtotal", not "missing data".
+- `CUBE` (all combinations) and `GROUPING SETS` (chosen combinations) are the siblings of ROLLUP; interviewers sometimes ask "ROLLUP vs CUBE".
+- Column order in ROLLUP changes which subtotals you get — `ROLLUP(a, b)` subtotals on a, `ROLLUP(b, a)` on b.
 
-|Tables: CUST_MSTR, ADDR_DTLS|
-|Columns: CUST_MSTR: CUST_NO, FNAME, LNAME,ADDR_DTLS: CODE NO, ADDR1, ADDR2, CITY, STATE, PINCODE|
-|Technique: Sub-Queries, Operators: IN, Clauses: WHERE, Other: Concat(||)|
+---
 
+### Subqueries (Nested Queries)
+#### Explain It
+A subquery is a SELECT inside another statement, used to (1) feed values into WHERE/HAVING conditions (`IN`, `=`, `EXISTS`), (2) act as a data source in the FROM clause (an *inline view*), (3) supply rows for INSERT ... SELECT, or (4) build tables/views. Oracle executes non-correlated subqueries once and re-uses the result; correlated subqueries re-execute per outer row.
+
+#### Prove It
 ```sql
-SELECT CODE NO "Cust. No.", ADDR1 || '' || ADDR2 ||'' || CITY || ',' || STATE || ', ' || PINCODE "Address"
-FROM ADDR_DTLS WHERE CODE_NO IN(SELECT CUST_NO FROM CUST_MSTR
-WHERE FNAME = 'Ivan' AND LNAME = 'Bayross');
-```
+-- 1) IN: an address list only for customers named Ivan Bayross
+SELECT CODE_NO AS CUST_NO,
+       ADDR1 || ' ' || ADDR2 || ' ' || CITY || ', ' || STATE || ', ' || PINCODE AS ADDRESS
+FROM ADDR_DTLS
+WHERE CODE_NO IN (SELECT CUST_NO FROM CUST_MSTR
+                  WHERE FNAME = 'Ivan' AND LNAME = 'Bayross');
 
-**Using Sub-query In The FROM Clause**
-A subquery can be used in the FROM clause of the SELECT statement, 
-The concept of using a subquery in the FROM clause of the SELECT statement is called an inline view. 
-A subquery in the FROM clause of the SELECT statement defines a data source from that particular Select statement.
+-- 2) FROM clause: inline view (aliases are MANDATORY in Oracle)
+SELECT A.ACCT_NO, A.CURBAL, A.BRANCH_NO, B.AVGBAL
+FROM ACCT_MSTR A,
+     (SELECT BRANCH_NO, AVG(CURBAL) AVGBAL FROM ACCT_MSTR GROUP BY BRANCH_NO) B
+WHERE A.BRANCH_NO = B.BRANCH_NO AND A.CURBAL > B.AVGBAL;
 
-|Tables: ACCT_MSTR |
-|Columns: ACCT NO, CURBAL, BRANCH_NO|
-|Technique: Sub-Queries, Join, Functions: AVG(), Clauses: WHERE, GROUP BY|
+-- 3) correlated: same answer as 2, computed per branch
+SELECT ACCT_NO, CURBAL, BRANCH_NO FROM ACCT_MSTR A
+WHERE CURBAL > (SELECT AVG(CURBAL) FROM ACCT_MSTR WHERE BRANCH_NO = A.BRANCH_NO);
 
-```sql
-SELECT A.ACCT NO, A.CURBAL, A.BRANCH_NO, B.AVGBAL
-FROM ACCT MSTR A, (SELECT BRANCH_NO, AVG(CURBAL) AVGBAL FROM ACCT_MSTR
-GROUP BY BRANCH_NO) B
-WHERE A.BRANCH NO = B.BRANCH_NO AND A.CURBAL > B.AVGBAL;
-```
-
-
-Using Co-related subqueries:
-```sql
-SELECT ACCT NO, CURBAL, BRANCH NO FROM ACCT MSTRA
-WHERE CURBAL > (SELECT AVG(CURBAL) FROM ACCT MSTR
-WHERE BRANCH NO =A.BRANCH NO);
-```
-
-Using Multi-Column SubQueries
-
-Synopsis:
-Tables:| CUST MSTR, EMP_MSTR
-Columns:| CUST MSTR: FNAME, LNAME, EMP_MSTR: FNAME, LNAME
-Technique:|CUST MSTR: FNAME, LNAME, EMP_MSTR: FNAME, LNAME
-
-Sub_Queries, Operators: IN, Clauses: WHERE
-```sql
+-- 4) multi-column: customers who are also employees (both names match)
 SELECT FNAME, LNAME FROM CUST_MSTR
-WHERE (FNAME, LNAME) IN(SELECT FNAME, LNAME FROM EMP _ MSTR);
+WHERE (FNAME, LNAME) IN (SELECT FNAME, LNAME FROM EMP_MSTR);
 ```
+
+#### Gotchas / Edge Cases
+- An inline view (subquery in FROM) **must have an alias** in Oracle — forgetting it gives `ORA-00933` or "missing alias" errors.
+- A subquery feeding `=` or `>` must return exactly one row (an extra row → `ORA-01427: single-row subquery returns more than one row`); for many values use IN or EXISTS.
+- Correlated subqueries re-run per outer row — full table scans on both sides can be slow; interview answer: prefer JOIN or a subquery executed once.
+- `IN (SELECT ...)` with NULLs in the subquery result matches nothing for the NOT IN case — everything becomes unknown (see `10-interview-questions.md`).
