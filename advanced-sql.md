@@ -254,3 +254,127 @@ SELECT ROWNUM, FIRST_NAME FROM (
 - `ROWNUM = N` only ever matches N = 1; any other exact value returns nothing.
 - Oracle 12c's `FETCH FIRST n ROWS ONLY` replaces this whole dance — prefer it; understand ROWNUM only to read legacy code.
 - ROWNUM is assigned before window functions — `ROW_NUMBER()` is the modern, deterministic equivalent.
+
+---
+
+### Window Functions: LAG and LEAD
+#### Explain It
+`LAG(expr, offset, default)` looks *backward* from the current row to a previous row in the same partition; `LEAD` looks *forward*. Both return the value from that offset row, or the supplied default when no such row exists. They let you compute "previous salary", "next login date", "gap since last order" without a self-join.
+
+#### Prove It
+```sql
+-- previous and next salary for each employee, ordered by salary
+SELECT emp_id, sal,
+       LAG(sal) OVER (ORDER BY sal)  AS prev_sal,
+       LEAD(sal) OVER (ORDER BY sal) AS next_sal
+  FROM emp_mstr;
+
+-- gap in days between consecutive logins per user
+SELECT user_id, login_date,
+       login_date - LAG(login_date, 1, login_date)
+         OVER (PARTITION BY user_id ORDER BY login_date) AS days_since_last
+  FROM logins;
+```
+
+#### Gotchas / Edge Cases
+- `LAG`/`LEAD` require an `OVER` clause — they cannot be used bare like `ROWNUM`.
+- The third argument (`default`) is used only when the offset row is missing (first row for LAG, last row for LEAD); omit it and you get NULL.
+- `PARTITION BY` resets the window per group — without it the window spans the entire result set.
+- Oracle 8i+ supports LAG/LEAD; PostgreSQL and MySQL 8+ support them too with identical syntax.
+
+---
+
+### Clustered vs Non-Clustered Index (Concept)
+#### Explain It
+A **clustered index** stores the table rows *in the index order* — the leaf pages of the index *are* the data pages. Only one per table, because the data can only be physically sorted one way. A **non-clustered index** is a separate structure whose leaf pages hold pointers (ROWIDs in Oracle) back to the data rows.
+
+Oracle does **not** have a separate "clustered index" feature like SQL Server: the PRIMARY KEY index in Oracle is just a unique B-tree index, and the table data is stored independently (heap-organized by default). Oracle's closest equivalents are **IOTs (Index-Organized Tables)**, where the primary key index *is* the table, and **clusters**, where multiple tables sharing a key share the same data blocks.
+
+#### Prove It
+```sql
+-- SQL Server has clustered indexes; Oracle's closest equivalent is an IOT:
+CREATE TABLE emp_iot (
+  emp_id    VARCHAR2(10) PRIMARY KEY,
+  emp_name  VARCHAR2(50),
+  sal       NUMBER(11,2),
+  CONSTRAINT emp_iot_pk PRIMARY KEY (emp_id)
+) ORGANIZATION INDEX;   -- Oracle IOT: PK index stores the full row
+
+-- Verify: the table IS the index
+SELECT segment_name, segment_type FROM user_segments WHERE segment_name = 'EMP_IOT';
+```
+
+#### Gotchas / Edge Cases
+- Oracle IOTs require the PK to be in the index — you cannot have a non-PK clustered structure.
+- SQL Server's "clustered index" terminology is the most common interview usage; when asked in an Oracle context, explain IOTs as the equivalent.
+- A heap table (no clustered index) in SQL Server = a normal Oracle table = full table scan for range queries on non-indexed columns.
+
+---
+
+### Filtered / Partial Indexes
+#### Explain It
+A **filtered index** (SQL Server term) or **partial index** (Postgres) indexes only a *subset* of rows — those matching a `WHERE` predicate. Oracle achieves the same with a **function-based index** using a `CASE` that returns a constant for rows to index and NULL for rows to skip (Oracle B-tree ignores all-NULL entries).
+
+#### Prove It
+```sql
+-- SQL Server syntax for reference:
+-- CREATE FILTERED INDEX idx_active ON emp_mstr(emp_id) WHERE is_active = 'Y';
+
+-- Oracle equivalent: function-based index that only indexes active rows
+CREATE INDEX idx_active_emp ON emp_mstr(
+  CASE WHEN is_active = 'Y' THEN emp_id END
+);
+-- Rows where is_active != 'Y' store NULL in the index and are not indexed
+
+-- Verify the index is used
+SELECT * FROM emp_mstr WHERE is_active = 'Y' AND emp_id = 'E1';
+```
+
+#### Gotchas / Edge Cases
+- A function-based filtered index only helps queries that use the **same expression** in the WHERE clause — `WHERE is_active = 'Y'` uses the index; `WHERE is_active IN ('Y')` may not.
+- Oracle ignores all-NULL entries in B-tree indexes, which is what makes the `CASE` trick work — this is the interview-ready explanation.
+- PostgreSQL supports `CREATE INDEX ... WHERE ...` natively; Oracle needs the function-based form.
+
+---
+
+### Temporary Tables (GTT and PTT)
+#### Explain It
+Oracle offers two flavours of temporary tables: **Global Temporary Tables (GTT)** — schema-level objects whose definition persists but whose *data* is session- or transaction-scoped; and **Private Temporary Tables (PTT, Oracle 18c+)** — prefixed `ORA$PTT_`, visible only to the creating session, and dropped automatically at session end.
+
+| Property          | GTT (`CREATE GLOBAL TEMPORARY TABLE`) | PTT (`CREATE PRIVATE TEMPORARY TABLE`) |
+| ----------------- | -------------------------------------- | -------------------------------------- |
+| Definition        | Persistent in data dictionary          | Persistent in data dictionary          |
+| Data visibility   | Session-specific (default) or transaction-specific | Session-specific only |
+| Data lifetime     | Session end or `COMMIT` (per `ON COMMIT`) | Session end |
+| Naming            | Normal table name, in a schema          | Must start with `ORA$PTT_`             |
+| Indexes/constraints | Yes                                   | Yes                                    |
+
+#### Prove It
+```sql
+-- GTT: definition persists, data is session-private
+CREATE GLOBAL TEMPORARY TABLE gtt_temp_emp (
+  emp_id   VARCHAR2(10),
+  emp_name VARCHAR2(50)
+) ON COMMIT PRESERVE ROWS;   -- data survives COMMIT; cleared at session end
+
+INSERT INTO gtt_temp_emp VALUES ('E1', 'Hansel');
+INSERT INTO gtt_temp_emp VALUES ('E2', 'Gretel');
+SELECT * FROM gtt_temp_emp;   -- 2 rows, visible only to this session
+COMMIT;
+SELECT * FROM gtt_temp_emp;   -- still 2 rows (PRESERVE ROWS)
+
+-- PTT (Oracle 18c+): shorter-lived, no schema clutter
+CREATE PRIVATE TEMPORARY TABLE ora$ptt_session (
+  emp_id VARCHAR2(10)
+) ON COMMIT DROP DEFINITION;   -- drops the table at session end
+
+INSERT INTO ora$ptt_session VALUES ('E1');
+SELECT * FROM ora$ptt_session;  -- 1 row
+-- when this session disconnects, the table definition vanishes
+```
+
+#### Gotchas / Edge Cases
+- GTT data is **not shared between sessions** — two sessions inserting into the same GTT see their own rows only.
+- `ON COMMIT DELETE ROWS` wipes GTT data at each COMMIT; `ON COMMIT PRESERVE ROWS` keeps data until session end — choose the right one.
+- GTT definitions (DDL) are permanent and visible to all users with access; only the *rows* are temporary — a common interview surprise.
+- Oracle PTTs cannot be converted to regular tables; they are strictly transient and cannot have global indexes.
