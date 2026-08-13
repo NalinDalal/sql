@@ -1,355 +1,323 @@
-SECTION — III: STRUCTURED QUERY LANGUAGE (SQL)
-chap 7
+# SQL Commands
 
-# Data Types
+> **Dialect note:** Oracle SQL (VARCHAR2, DUAL, FETCH FIRST). PostgreSQL/MySQL differences are flagged inline where they matter in interviews. (Chapter 7 of the course PDF.)
 
-## Basic Data Types
+### Data Types
+#### Explain It
+Oracle's basic string types are `CHAR(size)`, a fixed-length string that pads short values with spaces, and `VARCHAR2(size)`, a variable-length string that stores only what you give it. The classic textbook claim that "CHAR is up to 50% faster than VARCHAR2" is **unverified folklore — do not repeat a specific number in an interview**; the real reason to prefer CHAR is data that is naturally fixed-width (codes, flags, hashes). `NUMBER` covers integers and decimals, and `DATE` stores date + time.
 
-- `CHAR(size)`:string value of fixed length; gets padded with space; say 20 is
-  arg but we give 15 so still remaining 5 will get saved with WhiteSpaces.
-- `VARCHAR(size)`:here that remaining 5 will get trimmed
-  but CHAR is faster than VARCHAR upto 50%
-
-# CREATE
-
-Rules:
-
-1. A name can have upto 30 char
-2. A-Z,a-z,0-9
-3. name should begin with alphabet
-4. spcl char can be used
-5. reserved words not allowed
-
-Syntax:
-
+#### Prove It
 ```sql
-CREATE TABLE <Tablename> (<ColumnName1> <DataType>(<size), <ColumnName2> <DataType>(<Size>));
-```
-
-Example: Create the BRANCH_MSTR table as shown in the Chapter 6 along with the structure for other table belonging to the Bank System.
-first create the database, then table
-
-```sql
-CREATE SCHEMA "DBA_BANKSYS";
-CREATE TABLE "DBA_BANKSYS"."BRANCH_MSTR" (
-    "BRANCH_NO" VARCHAR(20),
-    "NAME" VARCHAR(25)
+CREATE TABLE DEMO_TYPES (
+  FIXED   CHAR(10),      -- 'AB' is stored as 'AB        ' (padded)
+  FLEX    VARCHAR2(10),  -- 'AB' is stored as 'AB'
+  QTY     NUMBER(6,2),
+  OCCURRED DATE
 );
-
 ```
 
-set the `search_path`->
+#### Gotchas / Edge Cases
+- Oracle compares `CHAR` values with blank-padded comparison, so `CHAR(10)` holding `'AB'` equals `'AB'` — but `VARCHAR2` does not pad, which causes surprising inequality when mixing the two types.
+- `VARCHAR2(4000)` is the classic max in a table column (older limit); `VARCHAR( n )` is an alias that will become `VARCHAR2` in the future — never use it, use `VARCHAR2` directly.
+- MySQL's `VARCHAR` is fine, but Oracle text fields are `VARCHAR2` — a classic interview trap if you mix dialects.
 
+---
+
+### CREATE TABLE and the "Schema = Username" Rule
+#### Explain It
+Oracle has no separate "schema" object: a schema is the collection of objects owned by a database user, and the schema name *is* the username. So the course's `CREATE SCHEMA "DBA_BANKSYS"` + `SET search_path` idea (which is PostgreSQL syntax) maps to Oracle as: create a user named DBA_BANKSYS, then create the tables while connected as that user (or by qualifying the object name with the username). Table names follow rules: max 30 chars, start with a letter, alphanumeric only, no reserved words, no special characters.
+
+#### Prove It
 ```sql
-postgres=# SET search_path TO DBA_BANKSYS;
-SET
+-- run as a DBA (e.g. SYSTEM):
+CREATE USER DBA_BANKSYS IDENTIFIED BY bankpass;
+GRANT CONNECT, RESOURCE, UNLIMITED TABLESPACE TO DBA_BANKSYS;
 ```
-
-# INSERT
-
-- Create new empty row in database
-- Loads the values passed (by the SQL insert) into the columns specified
-
-## All Row & Column
-
 ```sql
-INSERT INTO <tablename> (<columnname1>, <columnname2>)
-VALUES (<expression>, <expression2 >);
+-- connect as DBA_BANKSYS and create the table in your own schema:
+CREATE TABLE BRANCH_MSTR (
+  BRANCH_NO VARCHAR2(20),
+  NAME      VARCHAR2(25)
+);
 ```
 
-Ex: `INSERT INTO BRANCH_MSTR (BRANCH_NO, NAME) VALUES('B!', 'Vile Parle (HO)');
-INSERT INTO BRANCH_MSTR (BRANCH_NO, NAME) VALUES('B3', 'Churchgate');
-INSERT INTO BRANCH_MSTR (BRANCH_NO, NAME) VALUES('B4', 'Sion');
-INSERT INTO BRANCH_MSTR (BRANCH_NO, NAME) VALUES('BS', 'Borivali');
-INSERT INTO BRANCH_MSTR (BRANCH_NO, NAME) VALUES('B6', 'Matunga');`
-alt:
-`INSERT INTO "DBA_BANKSYS"."BRANCH_MSTR" ("BRANCH_NO", "NAME")
-VALUES ('B!', 'Vile Parle (HO)');
-INSERT 0 1`
+#### Gotchas / Edge Cases
+- A brand-new Oracle user has **zero quota** on the USERS tablespace: the first INSERT fails with `ORA-01950: insufficient quota` until you grant `UNLIMITED TABLESPACE` (or a quota).
+- The old PostgreSQL shortcut `CREATE SCHEMA x; SET search_path TO x;` does **not** exist in Oracle — qualify with `owner.table` (`DBA_BANKSYS.BRANCH_MSTR`) instead.
+- In an interview, "schema = username" is a crisp Oracle fact; PostgreSQL separates logins (roles) from database objects (schemas).
 
-# View Data in Table
+---
 
-use SELECT Clause
-`SELECT <ColumnName 1> TO <ColumnName A> FROM TableName;`
-Syntax:`SELECT * FROM <TableName>;`
-`SELECT *` - Retrieve all column(everything)
-`FROM` - tell sql where to find your data
-gives all of schema with data
+### INSERT
+#### Explain It
+`INSERT` adds a new empty row to a table and loads the values you pass into the listed columns. The column list and the `VALUES` list must line up positionally; columns you omit get `NULL` (or their `DEFAULT`). You can also insert many rows at once by selecting them from another table.
 
-first FROM clauses gets executed then SELCT clause gets executed
-
-## Selected Columns And All Rows
-
+#### Prove It
 ```sql
-SELECT <ColumnName1>, <ColumnName2> FROM <TableName>:
+INSERT INTO BRANCH_MSTR (BRANCH_NO, NAME) VALUES ('B1', 'Vile Parle (HO)');
+INSERT INTO BRANCH_MSTR (BRANCH_NO, NAME) VALUES ('B3', 'Churchgate');
+INSERT INTO BRANCH_MSTR (BRANCH_NO, NAME) VALUES ('B4', 'Sion');
 ```
+Oracle prints something like `1 row created.` after each statement (psql prints `INSERT 0 1` — output format is client-specific).
 
-Ex:
-`SELECT BRANCH_NO FROM BRANCH_MSTR;`
-since belongs to special schema -> `SELECT * FROM "DBA_BANKSYS"."BRANCH_MSTR";`
+#### Gotchas / Edge Cases
+- Column/value count mismatch is a runtime error (`ORA-00947: not enough values`) — the classic "forgot one column" trap.
+- Strings are single-quoted; a literal single quote inside is doubled (`'O''Brien'`), not escaped with a backslash like MySQL.
+- `INSERT` inside a transaction can be rolled back; `INSERT` performed by DDL (CTAS) cannot (see TRUNCATE/DELETE concept).
 
-## Selected Rows And All Columns
+---
 
-WHERE Clause in an SQL query to apply a filter on the rows retrieved.
+### SELECT — the Query Language
+#### Explain It
+`SELECT` is the heart of SQL: it retrieves data and builds a temporary result set. Execution order matters — the `FROM` clause is processed first (which tables feed the query), then `WHERE` filters rows, and only then is the `SELECT` list projected. `SELECT *` returns every column; listing columns returns only those.
 
-When a where clause is added to the SQL query, the Oracle engine compares each record in the table with
-the condition specified in the where clause. The Oracle engine displays only those records that satisfy the
-specified condition.
-
+#### Prove It
 ```sql
-SELECT * FROM <TableName> WHERE <Condition>;
+-- all columns, all rows
+SELECT * FROM BRANCH_MSTR;
+
+-- selected columns, all rows
+SELECT BRANCH_NO FROM BRANCH_MSTR;
+
+-- all columns, selected rows
+SELECT * FROM BRANCH_MSTR WHERE NAME = 'Churchgate';
+
+-- selected columns AND selected rows
+SELECT ORDER_ID, ITEM FROM ORDERS WHERE AMOUNT > 300;
 ```
 
-Here, <Condition> is always quantified as <ColumnName = Value>
-Ex: `SELECT item FROM Orders WHERE amount>300;`
+#### Gotchas / Edge Cases
+- `WHERE <col> = NULL` matches **nothing** — NULL is not a value, so compare with `IS NULL` / `IS NOT NULL` (see first interview question in `10-interview-questions.md`).
+- In Oracle you may write `SELECT 2 FROM DUAL;` — `DUAL` is Oracle's dummy one-row table for function demos; Postgres/MySQL use `SELECT 2;` without FROM.
+- A `SELECT` never modifies data — if the interviewer asks "does SELECT lock rows?", Oracle's plain SELECT is lock-free (except `FOR UPDATE`, see `security.md`).
 
-## Selected Columns And Selected Rows
+---
 
-To view a specific set of rows and columns from a table
+### Returning Only the First N Rows
+#### Explain It
+To restrict the result to a limited number of rows, the modern Oracle keyword is `FETCH FIRST n ROWS ONLY` (Oracle 12c+). Older Oracle used the `ROWNUM` trick (see `advance-feat.md`); SQL Server uses `SELECT TOP 3`, PostgreSQL and MySQL use `LIMIT 3` — naming all three in an interview scores points.
 
+#### Prove It
 ```sql
-SELECT <ColumnNamei>, <ColumnName2> FROM <TableName>
-WHERE <Condition>;
+SELECT ORDER_ID, ITEM FROM ORDERS
+ORDER BY AMOUNT DESC
+FETCH FIRST 2 ROWS ONLY;
 ```
 
-Ex: `SELECT first_name, last_name FROM Customers WHERE age>17;`
+#### Gotchas / Edge Cases
+- Without an `ORDER BY`, "first 3" is arbitrary — the database is free to return any 3 rows.
+- `FETCH FIRST` is ANSI SQL (works in Postgres too), but SQL Server's `TOP` and MySQL's `LIMIT` are not interchangeable — knowing the mapping is a classic interview question.
+- The old `WHERE ROWNUM < 4` approach breaks when combined with `ORDER BY` (explained in `advance-feat.md`).
 
-## Select only limited Rows
-We use `Top(Limit)` to return the restricted number of rows
+---
 
-to return only 3 Customers
+### DISTINCT — Removing Duplicate Rows
+#### Explain It
+`DISTINCT` removes rows that are exactly identical across every selected column; it can only be used with `SELECT`. Duplicates are considered on the full row, not per column, so `SELECT DISTINCT ITEM, AMOUNT` keeps rows that differ in *either* column.
+
+#### Prove It
 ```sql
-SELECT Top 3 *
-    FROM customers
+SELECT DISTINCT ITEM FROM ORDERS;
 ```
 
+#### Gotchas / Edge Cases
+- `DISTINCT` scans and compares whole rows — on big tables it can be slower than a plain `GROUP BY` on the same columns (both give the same answer here).
+- `COUNT(DISTINCT col)` counts unique values while ignoring NULLs.
+- In Oracle, `SELECT DISTINCT` on a column with NULLs keeps one NULL row (NULL = NULL for grouping purposes).
 
-# ELIMINATING DUPLICATE ROWS WHEN USING A SELECT STATEMENT
+---
 
-The `DISTINCT` clause allows removing duplicates from the result set. The `DISTINCT` clause can only be used with select statements.
-Appears only once
+### ORDER BY — Sorting Results
+#### Explain It
+`ORDER BY` sorts the result set by one or more columns, ascending (default) or descending with `DESC`. It is the last clause to execute, which is why it can sort by a column alias defined in the `SELECT` list.
 
+#### Prove It
 ```sql
-SELECT DISTINCT <ColumnNamel1>, <ColumnName2> FROM <TableName>;
+SELECT * FROM CUSTOMERS ORDER BY FIRST_NAME;
+SELECT * FROM CUSTOMERS ORDER BY FIRST_NAME DESC;
+SELECT ORDER_ID, ITEM FROM ORDERS ORDER BY AMOUNT DESC FETCH FIRST 2 ROWS ONLY; -- 2 most recent/largest
 ```
 
-The `SELECT DISTINCT` SQL syntax scans through entire rows, and eliminates rows that have exactly the same contents in each column.
+#### Gotchas / Edge Cases
+- Multiple sort keys are applied left to right; each key can have its own `ASC`/`DESC`.
+- NULLs sort last in Oracle's ascending order (first in some other databases — e.g. MySQL puts NULLs first).
+- An `ORDER BY` on a non-indexed column can force a full sort of the result — relevant when an index "hurts or helps" (see `advanced-sql.md`).
 
-Ex: `SELECT DISTINCT item,amount,customer_id FROM Orders;`
+---
 
-# SORTING DATA in TABLE
+### Creating a Table From a Table (CTAS)
+#### Explain It
+`CREATE TABLE ... AS SELECT` (CTAS) both creates a new table and populates it with the query's result in one statement. The new table inherits the column *names* and *types* of the query output, but generally not constraints, defaults, or indexes.
 
-Syntax:
-
+#### Prove It
 ```sql
-SELECT * FROM <TableName> ORDER BY <ColumnNamel1>, <ColumnName2> <[Sort Order]>;
+CREATE TABLE ORDERS2 AS SELECT ORDER_ID, ITEM, AMOUNT FROM ORDERS;
 ```
 
-`ORDER BY` clause sorts the result set based on the columns specified; can only be used in SELECT statements.
+#### Gotchas / Edge Cases
+- No constraints are copied (no PK, no NOT NULL) — a lighter "copy" than `CREATE TABLE ... LIKE` style available elsewhere.
+- CTAS is DDL: in Oracle it implicitly commits the transaction and cannot be rolled back.
+- `SELECT *` inside CTAS snapshots the current data — it does not stay in sync when the source table changes.
 
-Ex: `SELECT * FROM Customers ORDER BY first_name;`
-gives the whole table in ascending order as per first_name with all other relevant data
+---
 
-Ex: `SELECT * FROM Customers ORDER BY first_name DESC;`
-gives the whole table in descending order as per first_name with all other relevant data
+### Inserting Data From Another Table
+#### Explain It
+Instead of `VALUES`, an `INSERT` can take its rows from a `SELECT` — the query supplies one row set that is appended in a single statement. Column lists must still line up: number and types of columns in the query must match the insert target.
 
-Ex: `SELECT TOP 2 * FROM orders ORDER BY order_date DESC`
-Get 2 most recent orders
-
-# CREATING A TABLE FROM A TABLE
-
-Syntax:
-
+#### Prove It
 ```sql
-CREATE TABLE <TableName> (<ColumnName>, < ColumnName>) AS SELECT <ColumnName>, <ColumnName> FROM <TableName>;
+INSERT INTO ORDERS2 (ORDER_ID, ITEM, AMOUNT)
+SELECT ORDER_ID, ITEM, AMOUNT FROM ORDERS;
 ```
 
-ex: `CREATE TABLE orders2 AS SELECT order_id, item, amount FROM Orders;`
+#### Gotchas / Edge Cases
+- This is the standard "archive the old rows" pattern: move rows out of a hot table into a history table.
+- If the SELECT returns more rows than the target allows (PK conflicts), the whole statement fails in Oracle — DML statements are atomic.
 
-# INSERTING DATA INTO A TABLE FROM ANOTHER TABLE
+---
 
-it is quite possible to populate a table with data that already exists in another table.
-Syntax:
+### DELETE
+#### Explain It
+`DELETE` removes rows (all of them, or a filtered set). The table structure and the space stay allocated. Because you cannot list two tables in the `FROM` clause of a DELETE, deleting rows based on another table's data uses a subquery — classically an `EXISTS` subquery.
 
+#### Prove It
 ```sql
-INSERT INTO <TableName>
-SELECT <ColumnName 1>, <ColumnName N> FROM <TableName>;
+-- all rows
+DELETE FROM ORDERS2;
+
+-- rows matching a condition from ANOTHER table
+DELETE FROM ADDR_DTLS WHERE EXISTS (SELECT FNAME FROM CUST_MSTR
+              WHERE CUST_MSTR.CUST_NO = ADDR_DTLS.CODE_NO
+                AND CUST_MSTR.FNAME = 'Ivan');
 ```
 
-ex: `INSERT INTO orders2 SELECT order_id,item,amount FROM Orders;`
+#### Gotchas / Edge Cases
+- `DELETE` without `WHERE` empties the table — always double-check before running it in production.
+- DELETE is DML and transactional: it can be rolled back in Oracle (TRUNCATE cannot — next concept).
+- In Oracle a `DELETE` that hits a row referenced as a parent key fails with a referential-integrity error unless `ON DELETE CASCADE` is set (see `constraints.md`).
 
-# DELETE OPERATIONS
+---
 
-verb DELETE in SQL is used to remove either:
+### UPDATE
+#### Explain It
+`UPDATE` changes values in existing rows. The `SET` clause lists which columns get which new values; with no `WHERE`, every row in the table is updated; with a `WHERE`, only matching rows.
 
-- All the rows from a table
-  OR
-- A set of rows from a table
-
-## Removal Of All Rows
-
+#### Prove It
 ```sql
-DELETE FROM <TableName>:
+-- all rows
+UPDATE BRANCH_MSTR SET NAME = UPPER(NAME);
+
+-- only selected rows
+UPDATE BRANCH_MSTR SET NAME = 'Head Office'
+WHERE NAME = 'Vile Parle (HO)';
 ```
 
-ex: `DELETE FROM orders2;`
+#### Gotchas / Edge Cases
+- Missing `WHERE` = unintentional mass update; the classic interview trap "what happens if you run UPDATE without WHERE?" — all rows change (and are reversible only if not yet committed).
+- Oracle does not allow updating a joined view directly in all cases (see view restrictions in `advanced-sql.md`).
+- `UPDATE` holds row locks until COMMIT/ROLLBACK — a long transaction blocks other writers (see `security.md`).
 
-note: table and schema exist, but the data is deleted
+---
 
-## Removal Of Specific Row(s) Based On The Data Held By The Other Table
+### ALTER TABLE — Modifying Structure
+#### Explain It
+`ALTER TABLE` changes an existing table's structure. Oracle makes a temporary copy of the table, performs the alteration on the copy, and swaps it in. You can add columns, drop columns, and modify a column's type/size. The classic limitations: you cannot rename the table or a column with ALTER (use the dedicated `RENAME` statement), and you cannot shrink a column below existing data.
 
-it is desired to delete records in one table based on values in another table.
-it is not possible to list more than one table in the FROM clause while performing a delete, the EXISTS clause can be used.
-ex: `DELETE FROM ADDR _DTLS WHERE EXISTS(SELECT FNAME FROM CUST MSTR
-WHERE CUST_MSTR.CUST_NO = ADDR_DTLS.CODE_NO
-AND CUST_MSTR.FNAME = 'Ivan’);`
-
-# UPDATE OPERATIONS
-
-UPDATE command is used to change or modify data values in a table.
-The verb update in SQL is used to either update:
-
-- All the rows from a table
-  OR
-- A select set of rows from a table
-
-## UPDATE All Rows
-
-The UPDATE statement updates columns in the existing table’s rows with new values. The SET clause
-indicates which column data should be modified and the new values that they should hold. The WHERE
-clause, if given, specifies which rows should be updated. Otherwise, all table rows are updated.
-
+#### Prove It
 ```sql
-UPDATE <TableName>
-SET <ColumnName1> = <Expression1>, <ColumnName2> = <Expression2>;
+ALTER TABLE BRANCH_MSTR ADD (CITY VARCHAR2(25));
+ALTER TABLE BRANCH_MSTR DROP COLUMN CITY;
+ALTER TABLE BRANCH_MSTR MODIFY (NAME VARCHAR2(30));
 ```
 
-ex: `UPDATE ADDR _DTLS SET City = 'Bombay’;`
+#### Gotchas / Edge Cases
+- Oracle syntax is `ALTER TABLE t MODIFY (cols);` — PostgreSQL says `ALTER TABLE t ALTER COLUMN c TYPE ...`; MySQL says `MODIFY COLUMN`. Same intent, three spellings.
+- Dropping a column that is part of the PRIMARY KEY is refused; drop the constraint first.
+- `ALTER` is DDL → implicit commit in Oracle (see `transactions.md`).
 
-## UPDATE Conditionally
+---
 
+### RENAME
+#### Explain It
+A standalone `RENAME old TO new` statement changes the name of a table (in PostgreSQL it's `ALTER TABLE old RENAME TO new`). Existing synonyms and views that reference it are invalidated until you update them.
+
+#### Prove It
 ```sql
-UPDATE <TableName>
-SET <ColumnNamei> = <Expressionl>, <ColumnName2> = <Expression2 >
-WHERE <Condition>;
+RENAME BRANCH_MSTR TO BRANCHES;
 ```
 
-ex: `UPDATE BRANCH MSTR SET NAME = 'Head Office’
-WHERE NAME = 'Vile Parle (HO)';`
+#### Gotchas / Edge Cases
+- Oracle's `RENAME` also works on sequences and synonyms; for columns it's `ALTER TABLE t RENAME COLUMN a TO b;` (12c+).
+- Renaming breaks stored procedures/views that reference the old name — they go invalid until recompiled (see `db-obj.md`).
 
-# MODIFYING THE STRUCTURE OF TABLES
+---
 
-`ALTER TABLE` allows changing the structure of an existing table.
-working-> making a temporary copy of the original table.;alteration is performed on copy.
+### TRUNCATE vs DELETE
+#### Explain It
+`TRUNCATE TABLE` empties a table much faster than DELETE because it doesn't log/process rows one by one — Oracle drops and re-creates the table's storage. It does not return a count of deleted rows, and it is **transaction-safety differs by dialect: in Oracle TRUNCATE is DDL — it issues an implicit COMMIT and cannot be rolled back; in PostgreSQL TRUNCATE is transactional and can be rolled back.** Saying the Oracle version and then adding "but Postgres differs" is exactly what an interviewer wants to hear.
 
+#### Prove It
 ```sql
-ALTER TABLE <TableName>
-ADD(<NewColumnName> <Datatype> (<Size>),
-<NewColumnName> <Datatype> (<Size>)...);
+TRUNCATE TABLE BRANCH_MSTR;   -- same result as DELETE without WHERE, but:
+--   Oracle:  not rollback-able, table structure stays
+--   Postgres: rollback-able
 ```
 
-ex:`ALTER TABLE "BRANCH_MSTR" ADD COLUMN "CITY" VARCHAR(25);`
+#### Gotchas / Edge Cases
+- TRUNCATE cannot run on a table with active locks/transactions referencing it in some databases (`cannot truncate a table referenced in a foreign key` — child tables must be truncated first or the FK disabled).
+- DELETE fires row-level triggers; TRUNCATE generally does not fire per-row triggers.
+- "DELETE without WHERE vs TRUNCATE" is a top interview pair: transactional vs not (Oracle), fast vs slow, per-row triggers vs storage reset.
 
-`DROPPING COLUMN`
+---
 
+### DROP TABLE — Destroying a Table
+#### Explain It
+`DROP TABLE` removes the table definition and all its data permanently. It cannot be undone (unless recovery/backup), so it is the most destructive of the "structure" commands.
+
+#### Prove It
 ```sql
-ALTER TABLE <TableName> DROP COLUMN <ColumnName>:
+DROP TABLE BRANCH_MSTR;
 ```
 
-ex: `ALTER TABLE BRANCH MSTR DROP COLUMN CITY;`
+#### Gotchas / Edge Cases
+- Oracle's `DROP TABLE` on a table referenced by foreign keys fails unless you add `CASCADE CONSTRAINTS`.
+- `DROP TABLE ... PURGE` bypasses the recycle bin (Oracle) for immediate, unrecoverable removal.
+- TRUNCATE keeps the structure; DROP removes the structure — that one-liner difference is a favorite interview short answer.
 
-`Modifying Existing Columns`
+---
 
+### Synonyms
+#### Explain It
+A synonym is an alternative name for a database object (table, view, sequence, procedure…) that hides the real owner and object name. `CREATE PUBLIC SYNONYM` makes it available to all users (who still need their own privileges on the underlying object); a plain synonym is private to its owner.
+
+#### Prove It
 ```sql
-ALTER TABLE eVableNiame>
-MODIFY (<ColumnName> < NewDatatype>(<NewSize>));
+CREATE SYNONYM ORD_ALIAS FOR ORDERS;          -- private
+SELECT COUNT(*) FROM ORD_ALIAS;               -- same as SELECT COUNT(*) FROM ORDERS
+
+CREATE PUBLIC SYNONYM ORD_PUB FOR ORDERS;     -- all users can reference ORD_PUB
+DROP PUBLIC SYNONYM ORD_PUB;
+
+DROP SYNONYM ORD_ALIAS;
 ```
 
-ex: `ALTER TABLE BRANCH_MSTR MODIFY (NAME varchar2(30));`
+#### Gotchas / Edge Cases
+- Creating a public synonym needs the `CREATE PUBLIC SYNONYM` privilege, and dropping it needs `DROP PUBLIC SYNONYM` — a privilege mismatch is a common ORA-01031 surprise.
+- A public synonym is a CDB-level object in newer Oracle (PDB restrictions apply) — flag this only if the interviewer goes deep.
+- Synonyms do not grant access: `GRANT` on the underlying object is still required (see `permissions.md`).
 
-## RESTRICTIONS
+---
 
-The following tasks cannot be performed when using the ALTER TABLE clause:
+### DESCRIBE — Displaying Table Structure
+#### Explain It
+`DESCRIBE table` (or `DESC table`) is the SQL\*Plus/SQLcl client command that prints a table's columns, types, and nullability. It's the fastest way to inspect a schema you don't know — the interview answer to "how do you see a table's structure?" is DESCRIBE in Oracle; psql uses `\d table` and MySQL `SHOW COLUMNS FROM table`.
 
-- Change the name of the table
-- Change the name of the column
-- Decrease the size of a column if table data exists
-
-# RENAMING TABLES
-
+#### Prove It
 ```sql
-RENAME <TableName> TO <NewTableName>
+DESCRIBE BRANCH_MSTR;
 ```
 
-ex: `RENAME BRANCH_MSTR TO BRANCHES;`
-
-# TRUNCATE TABLE
-
-it empties table completely
-Differes from `DELETE` in ways:
-
-- Truncate operations drop and re-create the table, which is much faster than deleting rows one by one
-- Truncate operations are not transaction-safe (i.e. an error will occur if an active transaction or an active table lock exists)
-- The number of deleted rows are not returned
-
-```sql
-TRUNCATE TABLE <TableName>;
-```
-
-ex: `TRUNCATE TABLE BRANCH MSTR;`
-
-# DESTROYING TABLES
-
-```sql
-DROP TABLE <TableName>;
-```
-
-ex: `DROP TABLE BRANCH_MSTR;`
-
-# CREATING SYNONYMs
-
-A synonym is an alternative name for objects such as tables, views, sequences, stored procedures, and other database objects.
-
-```sql
-CREATE [OR REPLACE] [PUBLIC] SYNONYM [SCHEMA .]
-SYNONYM_NAME FOR [SCHEMA .]
-OBJECT_NAME [@ DBLINK];
-```
-
-- The OR replace phrase allows to recreate the synonym (if it already exists) without having to issue a DROP synonym command.
-- The PUBLIC phrase means that the synonym is a public synonym and is accessible to all users.
-  Remember though that the user must first have the appropriate privileges to the object to use the
-  synonym.
-- The SCHEMA phrase is the appropriate schema. If this phrase is omitted, Oracle assumes that a
-  reference is made to the user’s own schema.
-- The OBJECT_NAME phrase is the name of the object for which you are creating the synonym. It can be one of the following:
-  - Table
-  - Package
-  - View
-  - Materialized View
-  - Sequence
-  - Java Class Schema Object
-  - Stored Procedure
-  - User-Defined Object
-  - Function
-  - Synonym
-
-ex: Create a synonym to a table named EMP held by the user SCOTT.
-`CREATE PUBLIC SYNONYM EMPLOYEES FOR SCOTT.EMP;`
-
-# DROPPING SYNONYM
-
-```sql
-DROP [PUBLIC] SYNONYM [SCHEMA.JSYNONYM_NAME [FORCE];
-```
-
-- The PUBLIC phrase allows to drop a public synonym. If public is specified, then there is no need to specify a schema. .
-- The FORCE phrase will force Oracle to drop the synonym even if it has dependencies. It is probably not a good idea to use the force phrase as it can cause invalidation of Oracle objects.
-
-ex: `DROP PUBLIC SYNONYM EMPLOYEES;`
-
-# DISPLAY TABLE STRUCTURE
-
-```sql
-\d <TableName>;
-```
+#### Gotchas / Edge Cases
+- DESCRIBE is a *client* command, not standard SQL — it won't run through a JDBC driver or other tools without the sqlplus shell.
+- DESCRIBE shows NOT NULL but not PRIMARY KEY — for constraints, query `USER_CONSTRAINTS`/`USER_CONS_COLUMNS` (or `\d table` details in psql).
