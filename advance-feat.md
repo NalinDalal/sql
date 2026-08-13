@@ -21,6 +21,50 @@ START WITH MNGR_NO IS NULL;
 
 ---
 
+### Trigger Pseudo-Records: :OLD and :NEW
+#### Explain It
+Inside a **row-level trigger**, Oracle exposes two implicit record variables: `:NEW` (the values the row will have *after* the DML) and `:OLD` (the values the row had *before* the DML). They are read/write for `:NEW` in `BEFORE` triggers, read-only in `AFTER` triggers; `:OLD` is always read-only. `INSERT` has `:NEW` only; `DELETE` has `:OLD` only; `UPDATE` has both.
+
+SQL Server calls these `INSERTED` and `DELETED` pseudo-tables (relationally, not record-wise); the concept is identical.
+
+#### Prove It
+```sql
+-- BEFORE INSERT trigger: enforce a business rule on :NEW
+CREATE OR REPLACE TRIGGER trg_emp_sal_chk
+  BEFORE INSERT OR UPDATE OF sal ON emp_mstr
+  FOR EACH ROW
+BEGIN
+  IF :NEW.sal < 20000 THEN
+    RAISE_APPLICATION_ERROR(-20001, 'Salary below minimum threshold');
+  END IF;
+END;
+/
+
+-- AFTER UPDATE trigger: audit changes using :OLD and :NEW
+CREATE OR REPLACE TRIGGER trg_emp_audit
+  AFTER UPDATE ON emp_mstr
+  FOR EACH ROW
+BEGIN
+  INSERT INTO emp_audit_log
+    (emp_no, old_sal, new_sal, changed_at)
+  VALUES
+    (:OLD.emp_no, :OLD.sal, :NEW.sal, SYSDATE);
+END;
+/
+
+-- Demonstrate the trigger
+UPDATE emp_mstr SET sal = 25000 WHERE emp_no = 'E1';
+-- emp_audit_log now contains (E1, old_sal, 25000, SYSDATE)
+```
+
+#### Gotchas / Edge Cases
+- `:NEW.column_name` in a `BEFORE` trigger is **writable** — changing `:NEW.sal := 30000` silently overrides the incoming value before the row is stored.
+- `:OLD` is **always read-only** — trying `:OLD.sal := 30000` raises `ORA-04084: cannot change NEW values for this trigger type`.
+- Statement-level triggers (no `FOR EACH ROW`) have no `:OLD`/`:NEW` — they fire once per statement, not once per row.
+- `INSERTED`/`DELETED` in SQL Server are *tables* (potentially multi-row); `:OLD`/`:NEW` in Oracle are *records* (one row per trigger execution) — this structural difference matters when porting trigger logic.
+
+---
+
 ### Matrix Reports with DECODE
 #### Explain It
 `DECODE(expr, val1, out1, val2, out2, ..., default)` returns the output matching the first equal value — a CASE-expression in function form. Pairing `SUM(DECODE(...,1,0))` with GROUP BY turns rows into a cross-tab: each DECODE contributes 1 when a row belongs to that column's bucket, 0 otherwise, so the SUM is the column's count.
