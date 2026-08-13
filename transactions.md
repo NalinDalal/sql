@@ -1,152 +1,174 @@
 # Transactions
 
-- **Transactions** group logically related SQL statements into a single unit of work. They ensure data integrity and consistency.
-- Oracle treats changes to table data as a two-step process: changes are made, then made permanent with a `COMMIT` or undone with a `ROLLBACK`.
-- **COMMIT**: Makes all changes in the current transaction permanent and releases locks.
-- **ROLLBACK**: Undoes all changes since the last `COMMIT` or to a specified `SAVEPOINT`, releasing locks.
-- **SAVEPOINT**: Marks a point within a transaction to which you can roll back, allowing partial undo of changes.
-- Transactions begin with the first executable SQL statement after a `COMMIT`, `ROLLBACK`, or connection.
-- All transactional locks are released after a `COMMIT` or `ROLLBACK`.
+> **Dialect note:** Oracle — transactions are implicit (no `BEGIN` needed); PL/SQL `BEGIN ... END;` is a code block, not a transaction marker.
 
-## Syntax Quick Reference
+### What is a Transaction
+#### Explain It
+A transaction groups logically related SQL statements into a single unit of work. Oracle treats changes in two steps: the changes are made, then they are made permanent with `COMMIT` or undone with `ROLLBACK`. A transaction starts with the first executable statement after a connection/commit, and ends at the next `COMMIT`/`ROLLBACK`. All locks taken during the transaction are released only at that point.
 
+#### Prove It
 ```sql
--- Commit the current transaction
-COMMIT;
-
--- Rollback the current transaction
-ROLLBACK;
-
--- Create a savepoint
-SAVEPOINT savepoint_name;
-
--- Rollback to a savepoint
-ROLLBACK TO SAVEPOINT savepoint_name;
+UPDATE ACCT_MSTR SET CURBAL = CURBAL - 1000 WHERE ACCT_NO = 'SB1';
+SELECT CURBAL FROM ACCT_MSTR WHERE ACCT_NO = 'SB1';   -- 9000 (your own session sees it)
+ROLLBACK;                                              -- undo it
+SELECT CURBAL FROM ACCT_MSTR WHERE ACCT_NO = 'SB1';   -- 10000 again
 ```
 
-## Best Practices
+#### Gotchas / Edge Cases
+- **Oracle starts a transaction implicitly** — there is no `BEGIN TRANSACTION`; the first DML statement opens one. PostgreSQL/MySQL require an explicit `BEGIN;` / `START TRANSACTION;` — knowing which dialect does what is a favorite interview point.
+- Uncommitted changes are visible to *you* but to no one else; other sessions keep seeing the committed version (read consistency).
+- If the session disconnects without COMMIT, the transaction is rolled back automatically (and locks released).
 
-- Always use transactions for operations that modify data in multiple steps.
-- Use `SAVEPOINT` for complex transactions to allow partial rollbacks.
-- Regularly `COMMIT` to avoid holding locks for too long.
-- Use `ROLLBACK` to undo unwanted changes before committing.
-- Check for errors before committing to ensure data integrity.
+---
 
-## Example Workflow
+### COMMIT and ROLLBACK
+#### Explain It
+`COMMIT` makes every change in the current transaction permanent and releases the transaction's locks. `ROLLBACK` undoes every change since the transaction started, restoring the data to its last committed state, and also releases locks. There is no "undo after commit" — anything committed survives even a crash (that is the Durability leg of ACID).
 
+#### Prove It
 ```sql
-BEGIN;
-	-- Step 1: Update data
-	UPDATE accounts SET balance = balance - 1000 WHERE acct_no = 'A1';
-	SAVEPOINT after_withdrawal;
-	-- Step 2: Deposit
-	UPDATE accounts SET balance = balance + 1000 WHERE acct_no = 'A2';
-	-- If error occurs, rollback to savepoint
-	-- ROLLBACK TO SAVEPOINT after_withdrawal;
-COMMIT;
+UPDATE ACCT_MSTR SET CURBAL = CURBAL - 1000 WHERE ACCT_NO = 'SB1';
+COMMIT;          -- now permanent — a later ROLLBACK cannot undo it
+SAVEPOINT s1;
+UPDATE ACCT_MSTR SET CURBAL = 0 WHERE ACCT_NO = 'SB1';
+ROLLBACK;        -- undoes only what happened AFTER the COMMIT
 ```
 
----
+#### Gotchas / Edge Cases
+- The order matters in interviews: "can a ROLLBACK undo a committed change?" — no.
+- Both commands release row/table locks; a lingering uncommitted UPDATE is the classic "why is my query hanging" cause (see `security.md`).
+- DDL (CREATE/ALTER/DROP/TRUNCATE) implicitly commits *before and after* itself — the reason you can't roll back a CREATE TABLE.
 
 ---
 
-## Notes
-- Use transactions to group related changes and ensure data consistency.
-- Always `COMMIT` after successful operations to make changes permanent.
-- Use `ROLLBACK` to undo unwanted changes before committing.
-- `SAVEPOINT` allows partial rollbacks within a transaction.
-- All locks are released after a `COMMIT` or `ROLLBACK`.
+### SAVEPOINT — Partial Rollback
+#### Explain It
+A savepoint marks a point inside a transaction. `ROLLBACK TO SAVEPOINT name` undoes only the statements issued after that marker, keeping the earlier ones. This lets you retry a step without losing the whole unit of work. Rolling back to a savepoint does **not** end the transaction and does **not** release locks.
 
----
-
-**Tip:** Use transactions for multi-step operations. Review your changes before committing to keep your database consistent.
-
----
-
-## Transaction Properties (ACID)
-
-- **Atomicity**: All operations in a transaction are completed; if not, the transaction is aborted and changes are rolled back.
-- **Consistency**: A transaction brings the database from one valid state to another, maintaining all rules and constraints.
-- **Isolation**: Transactions are isolated from each other; intermediate results are not visible to other transactions.
-- **Durability**: Once committed, changes are permanent, even in the event of a system failure.
-
----
-
-## Isolation Levels (Overview)
-
-Most databases support different isolation levels to control visibility of changes between transactions:
-- **Read Committed** (default in Oracle): Each query sees only committed data.
-- **Serializable**: Transactions are completely isolated; acts as if transactions run one after another.
-- **Read Uncommitted** and **Repeatable Read**: Not supported in Oracle, but common in other DBMS.
-
-Isolation levels affect concurrency and consistency. Use the default unless you have specific requirements.
-
----
-
-## Error Handling in Transactions
-
-In PL/SQL and procedural SQL, error handling is crucial to ensure data integrity. Use the `EXCEPTION` block to catch and handle errors during a transaction. If an error occurs, you can `ROLLBACK` to undo changes.
-
-**Example:**
+#### Prove It
 ```sql
-BEGIN
-		-- Start transaction
-		UPDATE accounts SET balance = balance - 1000 WHERE acct_no = 'A1';
-		UPDATE accounts SET balance = balance + 1000 WHERE acct_no = 'A2';
-		COMMIT;
-EXCEPTION
-		WHEN OTHERS THEN
-				ROLLBACK;
-				DBMS_OUTPUT.PUT_LINE('Error occurred. Transaction rolled back.');
+UPDATE ACCT_MSTR SET CURBAL = CURBAL - 1000 WHERE ACCT_NO = 'SB1';   -- withdrawal: 10000 -> 9000
+SAVEPOINT after_withdrawal;
+UPDATE ACCT_MSTR SET CURBAL = CURBAL + 1000 WHERE ACCT_NO = 'CA2';   -- deposit:   2500 -> 3500
+ROLLBACK TO SAVEPOINT after_withdrawal;                               -- deposit undone, withdrawal kept
+COMMIT;                                                               -- SB1 stays 9000, CA2 back to 2500
+```
+
+#### Gotchas / Edge Cases
+- After `ROLLBACK TO SAVEPOINT`, the savepoint still exists (you can reuse or re-create it); the markers created after it are gone.
+- Locks are NOT released by a partial rollback — only the full `COMMIT`/`ROLLBACK` frees them.
+- Savepoints work only inside a transaction; a `COMMIT` destroys all savepoints.
+
+---
+
+### ACID Properties
+#### Explain It
+The four guarantees a transaction engine must provide: **Atomicity** — all statements in the transaction succeed or none of them do; **Consistency** — the transaction moves the database from one valid state to another, preserving every constraint; **Isolation** — concurrent transactions do not see each other's intermediate results; **Durability** — once committed, changes survive crashes and power loss. Interviews usually ask for the expansion plus a one-line example of each from the banking domain.
+
+#### Prove It
+```sql
+BEGIN -- (Postgres/MySQL need the explicit marker; Oracle does not)
+  UPDATE ACCT_MSTR SET CURBAL = CURBAL - 1000 WHERE ACCT_NO = 'SB1';  -- atomic with:
+  UPDATE ACCT_MSTR SET CURBAL = CURBAL + 1000 WHERE ACCT_NO = 'CA2';  -- this one
+  COMMIT;  -- durable only from this moment
+EXCEPTION    -- Or: PL/SQL error handling rolls back the pair
+  WHEN OTHERS THEN ROLLBACK;
 END;
 ```
 
----
-
-## Edge Cases in Transactions
-
-- **Session Disconnect:** If a session disconnects before a `COMMIT`, all uncommitted changes are automatically rolled back by Oracle.
-- **System Crash:** If the database crashes before a `COMMIT`, changes are not saved. Oracle uses redo logs to recover committed transactions and roll back uncommitted ones.
-- **DDL Statements:** Executing DDL (like `CREATE`, `ALTER`, `DROP`) causes an implicit `COMMIT` before and after the statement.
+#### Gotchas / Edge Cases
+- Atomicity is about *statements within one transaction*, not about a single UPDATE touching many rows (that is one statement — also atomic in Oracle).
+- The "consistency" C is what CHECK/NOT NULL/FK constraints protect (see `constraints.md`).
+- Durability mechanism differs: Oracle uses redo logs; Postgres uses WAL — same idea, different names.
 
 ---
 
-## Advanced Isolation Level Anomalies
+### Isolation Levels in Oracle vs Postgres vs MySQL
+#### Explain It
+The isolation level controls how much of other transactions' uncommitted/committed work a transaction sees. **Oracle supports only READ COMMITTED (default) and SERIALIZABLE.** The other two standard levels exist in other engines — remember the full ANSI ladder and which level each vendor defaults to.
 
-Isolation levels control visibility of changes between transactions. Lower isolation can lead to anomalies:
+| Level | Oracle | PostgreSQL | MySQL |
+|---|---|---|---|
+| READ UNCOMMITTED | not supported | supported (behaves like READ COMMITTED) | supported (default is REPEATABLE READ) |
+| READ COMMITTED | **default** | **default** | supported |
+| REPEATABLE READ | not supported | supported | **default** |
+| SERIALIZABLE | supported | supported | supported |
 
-- **Dirty Read:** Transaction reads uncommitted changes from another transaction. (Not possible in Oracle; Oracle does not support Read Uncommitted.)
-- **Non-Repeatable Read:** A row is read twice in the same transaction and gets different values because another transaction modified and committed it in between. (Avoided in Serializable isolation.)
-- **Phantom Read:** A transaction re-executes a query returning a set of rows that satisfy a condition and finds that the set has changed due to another recently-committed transaction (e.g., new rows inserted). (Avoided in Serializable isolation.)
-
-**Example:**
+#### Prove It
 ```sql
--- Transaction 1
-BEGIN;
-SELECT * FROM accounts WHERE balance > 1000;
-
--- Transaction 2 (in parallel)
-INSERT INTO accounts VALUES ('A3', 2000);
+SET TRANSACTION ISOLATION LEVEL SERIALIZABLE;   -- Oracle: one of the only two legal values
+SELECT COUNT(*) FROM ACCT_MSTR;
 COMMIT;
-
--- Transaction 1 re-executes:
-SELECT * FROM accounts WHERE balance > 1000; -- Now sees the new row (phantom read)
 ```
 
+#### Gotchas / Edge Cases
+- Oracle's `SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED` is a **runtime error** — flagging this surprises interviewers who assume all engines support all four levels.
+- Oracle's "read consistency" means a READ COMMITTED query sees a consistent snapshot from when the query started — no dirty reads, ever.
+- Postgres accepts READ UNCOMMITTED syntactically but runs it as READ COMMITTED (no dirty reads there either); MySQL's InnoDB actually does negotiate its own REPEATABLE-READ-style snapshotting.
+- Raising the level trades concurrency for correctness — the classic "why not always SERIALIZABLE" answer is lock contention/staleness.
+
 ---
 
-## Oracle-Specific Transaction Quirks
+### Isolation Anomalies: Dirty, Non-Repeatable, Phantom Reads
+#### Explain It
+Lower isolation levels allow anomalies: **Dirty Read** — seeing another transaction's *uncommitted* change (impossible in Oracle, only possible in READ UNCOMMITTED levels); **Non-Repeatable Read** — the same row read twice inside one transaction returns different values because another transaction committed a change in between (possible in READ COMMITTED, avoided in REPEATABLE READ/SERIALIZABLE); **Phantom Read** — re-running a range query returns a *different set of rows* because another transaction inserted/removed matching rows in between.
 
-- **Auto-Commit Behavior:**
-	- By default, SQL*Plus and some tools auto-commit after each statement unless wrapped in a transaction block.
-- **Implicit Commits:**
-	- DDL statements (`CREATE`, `ALTER`, `DROP`, etc.) cause an implicit `COMMIT` before and after execution.
-	- Some DCL statements (`GRANT`, `REVOKE`) also cause implicit commits.
-- **Savepoints:**
-	- You can roll back to a savepoint, but all changes after the savepoint are undone.
-- **Locks:**
-	- Uncommitted changes hold locks; committing or rolling back releases them.
-- **Long Transactions:**
-	- Holding transactions open for too long can cause lock contention and resource issues.
+#### Prove It
+```sql
+-- session-level illustration (concept): the classic money-transfer pair is safe even at
+-- READ COMMITTED; the anomalies show up when a query is repeated inside one transaction
+SELECT SUM(CURBAL) FROM ACCT_MSTR;   -- T1: 100 .. another session commits a new account ..
+SELECT SUM(CURBAL) FROM ACCT_MSTR;   -- T1: 150  -> phantom read (in READ COMMITTED)
+```
+(To actually see the difference you need two concurrent sessions; the anomaly definitions above are what the interviewer checks.)
 
-**Tip:** Always be aware of implicit commits and auto-commit settings in your SQL environment to avoid accidental data loss or partial updates.
+#### Gotchas / Edge Cases
+- Oracle's READ COMMITTED is statement-level snapshot: repeat *queries* can still see new data (phantom) — Oracle's serializable cannot see it for the transaction's lifetime.
+- ORDER of danger: dirty read is hardest to defend, phantom read easiest — interviewers often ask you to order them.
+- These same four words (dirty/non-repeatable/phantom) are defined in `transactions.md` and rehearsed in `10-interview-questions.md` — reuse the same definitions for consistency.
+
+---
+
+### Oracle Transaction Quirks (Implicit Commits)
+#### Explain It
+Several Oracle behaviors surprise newcomers: DDL statements (`CREATE`, `ALTER`, `DROP`, `TRUNCATE`) cause an **implicit COMMIT** before and after themselves; some DCL statements (`GRANT`, `REVOKE`) do too. SQL\*Plus/other tools may auto-commit statements unless you wrap them in a logical unit, and long-running uncommitted transactions hold locks and bloat undo segments.
+
+#### Prove It
+```sql
+UPDATE ACCT_MSTR SET CURBAL = 0;      -- would roll back fine...
+CREATE TABLE TMP_PROBE (id NUMBER);   -- ...but this DDL implicitly COMMITS first
+ROLLBACK;                             -- the update is now permanent. Oops.
+DROP TABLE TMP_PROBE;
+```
+
+#### Gotchas / Edge Cases
+- "Heart of the trap question": UPDATE, then CREATE, then ROLLBACK — the update survives.
+- `GRANT`/`REVOKE` also commit implicitly (DCL), so sloppy scripts half-commit.
+- Long transactions = lock contention (`security.md`) + undo pressure; commit in batches in batch jobs.
+
+---
+
+### Transaction Error Handling (PL/SQL)
+#### Explain It
+In PL/SQL, the `EXCEPTION` block catches errors raised while the transaction runs. The standard pattern: try the statements, `COMMIT` on success, and on any error `ROLLBACK` and log the failure — guaranteeing atomicity even when the code, not the database, detects the problem.
+
+#### Prove It
+```sql
+SET SERVEROUTPUT ON
+BEGIN
+  UPDATE ACCT_MSTR SET CURBAL = CURBAL - 1000 WHERE ACCT_NO = 'SB1';
+  UPDATE ACCT_MSTR SET CURBAL = CURBAL + 1000 WHERE ACCT_NO = 'CA2';
+  COMMIT;
+  DBMS_OUTPUT.PUT_LINE('Transaction committed.');
+EXCEPTION
+  WHEN OTHERS THEN
+    ROLLBACK;
+    DBMS_OUTPUT.PUT_LINE('Error occurred. Transaction rolled back.');
+END;
+/
+```
+
+#### Gotchas / Edge Cases
+- `WHEN OTHERS` catches everything — but swallowing errors silently is an anti-pattern; log or re-raise.
+- `ROLLBACK` inside the handler releases locks only when it completes; keep the handler short.
+- This is the PL/SQL version of atomicity; the pure-SQL version needs no handler because a failed statement rolls itself back (statement-level atomicity).
