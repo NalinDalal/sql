@@ -1,175 +1,230 @@
-# Advanced Features in SQL*Plus
+# Advanced Features in SQL\*Plus and Oracle
 
-## 1. Tree-Structured Queries (Hierarchical Queries)
-- **Purpose:** Extract hierarchical relationships (e.g., employee-manager trees).
-- **Pattern:**
-  ```sql
-  SELECT LPAD(' ', LEVEL * 4) || FNAME || ' ' || LNAME "Employee Hierarchy"
-    FROM EMP_MSTR
-   CONNECT BY PRIOR EMP_NO = MNGR_NO
-   START WITH MNGR_NO IS NULL;
-  ```
-- **Notes:** Uses `LEVEL`, `CONNECT BY PRIOR`, and `START WITH` for hierarchy. Oracle-specific.
+> **Dialect note:** Oracle-only (CONNECT BY, DECODE, ROWNUM, NVL, SOUNDEX, DUMP). Several snippets need the SQL\*Plus client, not just a SQL engine.
 
----
+### Hierarchical (Tree-Structured) Queries
+#### Explain It
+`CONNECT BY` walks a tree relationship inside one table — the employee/manager example: each row links to a parent via a self-referencing key. `START WITH` names the root row(s), `PRIOR` tells Oracle which side is the parent, and `LEVEL` gives each row its depth in the tree. The classic use is organization charts; a plain self-join only goes one level deep, this goes all the way.
 
-## 2. Matrix Reports with DECODE
-- **Purpose:** Display data in a matrix format (e.g., branch vs. employee count).
-- **Pattern:**
-  ```sql
-  SELECT B.NAME "BRANCH",
-         DECODE(E.BRANCH_NO, 'B1', COUNT(E.EMP_NO)) "B1",
-         DECODE(E.BRANCH_NO, 'B2', COUNT(E.EMP_NO)) "B2",
-         ...
-    FROM EMP_MSTR E, BRANCH_MSTR B
-   WHERE B.BRANCH_NO = E.BRANCH_NO
-   GROUP BY B.NAME, E.BRANCH_NO;
-  ```
-- **Notes:** `DECODE` substitutes values for matrix output.
+#### Prove It
+```sql
+SELECT LPAD(' ', LEVEL * 4) || FNAME || ' ' || LNAME "Employee Hierarchy"
+FROM EMP_MSTR
+CONNECT BY PRIOR EMP_NO = MNGR_NO
+START WITH MNGR_NO IS NULL;
+```
+
+#### Gotchas / Edge Cases
+- `PRIOR` placement is easy to invert: `CONNECT BY PRIOR EMP_NO = MNGR_NO` walks top-down from manager to reports; swap the sides to walk bottom-up.
+- A cycle in the data (A reports to B who reports to A) makes the query loop — Oracle stops with `ORA-01436: CONNECT BY loop in user data`; the `NOCYCLE` keyword + `CONNECT_BY_ISCYCLE` handle it.
+- CONNECT BY is Oracle-only; PostgreSQL's equivalent is a recursive CTE (`WITH RECURSIVE`), MySQL 8+ also recursive CTEs. Say "recursive CTE" if asked how to do it elsewhere.
 
 ---
 
-## 3. Examine Column Contents (DUMP)
-- **Purpose:** View internal column details (type, length, ASCII values).
-- **Pattern:**
-  ```sql
-  SELECT DUMP(ACCT_NO) FROM ACCT_MSTR;
-  ```
+### Matrix Reports with DECODE
+#### Explain It
+`DECODE(expr, val1, out1, val2, out2, ..., default)` returns the output matching the first equal value — a CASE-expression in function form. Pairing `SUM(DECODE(...,1,0))` with GROUP BY turns rows into a cross-tab: each DECODE contributes 1 when a row belongs to that column's bucket, 0 otherwise, so the SUM is the column's count.
+
+#### Prove It
+```sql
+-- employees per branch, one output column per branch
+SELECT B.NAME "BRANCH",
+       SUM(DECODE(E.BRANCH_NO,'B1',1,0)) "B1",
+       SUM(DECODE(E.BRANCH_NO,'B2',1,0)) "B2",
+       SUM(DECODE(E.BRANCH_NO,'B3',1,0)) "B3",
+       COUNT(E.EMP_NO) "TOTAL"
+FROM EMP_MSTR E JOIN BRANCH_MSTR B ON B.BRANCH_NO = E.BRANCH_NO
+GROUP BY B.NAME;
+```
+```sql
+-- per-customer account-product matrix
+SELECT CUST_NO,
+       SUM(DECODE(SUBSTR(ACCT_FD_NO,1,2),'CA',1,0)) "CURRENT ACCOUNTS",
+       SUM(DECODE(SUBSTR(ACCT_FD_NO,1,2),'SB',1,0)) "SAVINGS ACCOUNTS",
+       SUM(DECODE(SUBSTR(ACCT_FD_NO,1,2),'FS',1,0)) "FIXED DEPOSITS",
+       COUNT(ACCT_FD_NO) "TOTAL"
+FROM ACCT_FD_CUST_DTLS
+GROUP BY CUST_NO;
+```
+
+#### Gotchas / Edge Cases
+- DECODE works on **equality only** — for ranges/`>` use `CASE WHEN`, the ANSI portable form (usually the better interview answer).
+- The trailing default matters: without it, non-matching values yield NULL, and `SUM(NULL + 1)` arithmetic breaks.
+- DECODE's matching treats NULLs as equal to NULLs (DECODE(NULL, NULL, 'x') → 'x'), unlike plain `=` comparison — a subtle trap.
 
 ---
 
-## 4. Drop Columns (Workarounds)
-- **Purpose:** Remove columns (pre-Oracle 8i).
-- **Patterns:**
-  - Set column to NULL, rename table, create view without column.
-  - Create new table without column, drop old table, rename new table.
-  - Oracle 8i+: `ALTER TABLE ... DROP COLUMN ...;`
+### Peeking at Stored Values: DUMP
+#### Explain It
+`DUMP` shows how Oracle really stores a value: the internal type, byte length, and the byte values. It is a debugging/teaching tool — useful to prove why `'1'` differs from `1`, or why CHAR pads and VARCHAR2 doesn't.
+
+#### Prove It
+```sql
+SELECT DUMP(ACCT_NO) FROM ACCT_MSTR WHERE ROWNUM < 2;
+-- e.g. Typ=1 Len=3: 83,66,49      (the bytes of 'SB1')
+```
+
+#### Gotchas / Edge Cases
+- DUMP output format varies by character set (AL32UTF8 vs WE8MSWIN1252) — byte numbers differ across databases even for the same text.
+- `DUMP` is diagnostic, not part of normal queries; don't reach for it in interviews beyond "it shows internal representation."
 
 ---
 
-## 5. Rename Columns
-- **Purpose:** Change column names.
-- **Patterns:**
-  - Add new column, copy data, drop old column.
-  - Create new table with desired column names, copy data, drop old table, rename.
+### Every Nth Row / Rows X to Y (ROWNUM)
+#### Explain It
+Because ROWNUM numbers rows as they are fetched, math on it can pick a pattern: `MOD(ROWNUM, 2) = 0` selects the even-numbered rows. To grab a *window* of rows (e.g. the 4th–7th), number the rows in a subquery first and filter on that inner number — the pattern works because the subquery already assigned RN before the outer WHERE runs.
+
+#### Prove It
+```sql
+SELECT ROWNUM, EMP_NO, FNAME FROM EMP_MSTR WHERE MOD(ROWNUM, 2) = 0;   -- even rows
+
+SELECT * FROM (SELECT ROWNUM RN, FNAME FROM EMP_MSTR WHERE ROWNUM < 8)
+WHERE RN BETWEEN 4 AND 7;                                              -- rows 4..7
+```
+
+#### Gotchas / Edge Cases
+- ROWNUM is assigned before ORDER BY — "even rows" without ordering is a fetch-order pattern, not a logical one (see `advanced-sql.md` for the full trap).
+- The `MOD(ROWNUM, 2) = 0` trick stops working after the first non-matching row in some engines — Oracle keeps assigning until done, but don't rely on the pattern for correctness.
 
 ---
 
-## 6. Select Every Nth Row
-- **Purpose:** Retrieve every Nth row (e.g., even rows).
-- **Patterns:**
-  ```sql
-  SELECT ROWNUM, EMP_NO, FNAME FROM EMP_MSTR WHERE MOD(ROWNUM, 2) = 0;
-  ```
+### Generate Primary Keys with Sequences
+#### Explain It
+Oracle sequences are the standard key generator: `NEXTVAL` produces a new unique number per call, safe under concurrency. Sequence values can be concatenated with text (e.g. `'C' || seq.NEXTVAL`) to make human-readable keys, and they are non-transactional — rolled-back statements burn numbers.
+
+#### Prove It
+```sql
+CREATE SEQUENCE SEQ_CUSTNO START WITH 1 INCREMENT BY 1;
+CREATE TABLE CUSTOMERS_KEY (CUST_NO VARCHAR2(10), NAME VARCHAR2(20));
+INSERT INTO CUSTOMERS_KEY VALUES ('C' || SEQ_CUSTNO.NEXTVAL, 'Ivan');     -- C1
+INSERT INTO CUSTOMERS_KEY VALUES ('C' || SEQ_CUSTNO.NEXTVAL, 'Nelson');   -- C2
+SELECT * FROM CUSTOMERS_KEY;
+```
+(Plain numeric keys work the same: `INSERT ... VALUES (SEQ_CUSTNO.NEXTVAL, ...)`.)
+
+#### Gotchas / Edge Cases
+- Gaps are normal: ROLLBACK or DELETE consumed numbers are never reused — "sequences are not gap-free" is the interview one-liner.
+- `CURRVAL` without a session's prior `NEXTVAL` raises ORA-08002.
+- Oracle 12c+ has `IDENTITY` columns as the declarative alternative; sequences remain the portable explanation.
 
 ---
 
-## 7. Generate Primary Keys
-- **Purpose:** Populate primary key column.
-- **Patterns:**
-  - Use `ROWNUM` for simple keys.
-  - Use sequence generator:
-    ```sql
-    CREATE SEQUENCE SEQ_CUSTNO START WITH 1 INCREMENT BY 1;
-    UPDATE CUSTOMERS SET CUST_NO = SEQ_CUSTNO.NEXTVAL;
-    ```
+### Date Arithmetic and Formatting
+#### Explain It
+Oracle dates are numeric: adding `1` adds one day, `1/24` one hour, `1/(24*60)` one minute. `TO_CHAR(..., 'fmt')` renders any date part. This is the fastest way to show "I know Oracle dates" in a coding question.
+
+#### Prove It
+```sql
+SELECT SYSDATE + 1    FROM DUAL;    -- tomorrow
+SELECT SYSDATE + 1/24 FROM DUAL;    -- one hour from now
+SELECT TO_CHAR(SYSDATE, 'Month DD, YYYY') FROM DUAL;  -- e.g. August 13, 2026
+```
+
+#### Gotchas / Edge Cases
+- `SYSDATE + 0.5` is noon tomorrow — fractional days are hours; forgetting `1/24` is the classic off-by-24 bug (see `computations.md`).
+- Format masks are case-sensitive in meaning ('Month' vs 'MONTH' vs 'MON') — each yields a different shape of text.
 
 ---
 
-## 8. Date Arithmetic
-- **Purpose:** Add days/hours/minutes/seconds to dates.
-- **Patterns:**
-  ```sql
-  SELECT SYSDATE + 1/24 FROM DUAL; -- Add 1 hour
-  SELECT SYSDATE + 1 FROM DUAL;    -- Add 1 day
-  ```
+### NULL Handling: NVL and Line Feeds
+#### Explain It
+`NVL(value, replacement)` returns the replacement when the value is NULL — the two-argument special case of COALESCE. `CHR(10)` is the newline character, useful for composing multi-line messages in one SELECT.
+
+#### Prove It
+```sql
+SELECT NVL(FNAME, 'A'), NVL(MNAME, 'Corporate'), NVL(LNAME, 'Customer')
+FROM CUST_MSTR WHERE ROWNUM < 2;
+
+SELECT 'CUSTOMER NAME: ' || FNAME || CHR(10) ||
+       'BIRTHDATE: ' || TO_CHAR(DOB_INC, 'DD-MON-YYYY')
+FROM CUST_MSTR WHERE ROWNUM < 2;
+```
+
+#### Gotchas / Edge Cases
+- Oracle's `''` IS NULL, so NVL('') hits the replacement; in PostgreSQL `''` is a real string and passes through — the perennial dialect difference.
+- `NVL` evaluates its second argument even when unnecessary; `COALESCE` short-circuits (see `computations.md`).
 
 ---
 
-## 9. Count Distinct Values
-- **Purpose:** Count unique values in a column.
-- **Pattern:**
-  ```sql
-  SELECT ACCT_NO, COUNT(*) FROM TRANS_MSTR GROUP BY ACCT_NO;
-  ```
+### Soundex — Phonetic Matching
+#### Explain It
+`SOUNDEX` converts a word into a phonetic code so that names that *sound* alike but are spelled differently (Ivan / Ivon) compare equal. It is a rough fuzzy-search tool, useful in customer-service lookups and dedup, and obviously not usable for semantics.
+
+#### Prove It
+```sql
+SELECT * FROM CUST_MSTR WHERE SOUNDEX(FNAME) = SOUNDEX('Ivan');
+```
+
+#### Gotchas / Edge Cases
+- Soundex works on English pronunciation only — it degrades for non-English names and is useless for numbers.
+- The code is a letter + three digits; common sound-alikes can still collide (false positives are expected).
 
 ---
 
-## 10. Matrix Reports with DECODE and GROUP BY
-- **Purpose:** Summarize multiple categories in one report.
-- **Pattern:**
-  ```sql
-  SELECT CUST_NO,
-         SUM(DECODE(SUBSTR(ACCT_FD_NO, 1, 2), 'CA', 1, 0)) "CURRENT ACCOUNTS",
-         SUM(DECODE(SUBSTR(ACCT_FD_NO, 1, 2), 'SB', 1, 0)) "SAVINGS ACCOUNTS",
-         SUM(DECODE(SUBSTR(ACCT_FD_NO, 1, 2), 'FS', 1, 0)) "FIXED DEPOSITS",
-         COUNT(ACCT_FD_NO) "TOTAL"
-    FROM ACCT_FD_CUST_DTLS
-   GROUP BY CUST_NO;
-  ```
+### Numeric-to-Words (Julian 'JSP')
+#### Explain It
+`TO_CHAR(n, 'JSP')` spells a number in English words by first converting the number to a Julian date format ('J') and then spelling it ('SP' = spell). It is a fun one-liner for cheque-printing examples.
+
+#### Prove It
+```sql
+SELECT TO_CHAR(TO_DATE(34654,'J'),'JSP') FROM DUAL;
+-- THIRTY-FOUR THOUSAND SIX HUNDRED FIFTY-FOUR
+```
+
+#### Gotchas / Edge Cases
+- The 'J' trick is limited by Oracle's Julian-date range — huge numbers overflow; don't use it in production.
+- 'SP' spelling inherits NLS language settings ('SP' vs 'SPTH' ordinal) — a format-model curiosity more than a daily tool.
 
 ---
 
-## 11. Retrieve Rows X to Y
-- **Purpose:** Get records between two row numbers.
-- **Pattern:**
-  ```sql
-  SELECT * FROM (SELECT ROWNUM RN, FNAME FROM EMP_MSTR WHERE ROWNUM < 8) WHERE RN BETWEEN 4 AND 7;
-  ```
+### Changing an Oracle Password (ALTER USER)
+#### Explain It
+Passwords are changed with `ALTER USER ... IDENTIFIED BY ...`, run by the user or the DBA for others. Scripts should never hardcode it; it exists in this notes file as a "how do I reset a password" SRE-ask.
+
+#### Prove It
+```sql
+-- as DBA, or as the user themselves:
+ALTER USER hansel IDENTIFIED BY hansel123;
+```
+
+#### Gotchas / Edge Cases
+- A user can alter their own password; a DBA can alter anyone's (and even expire it: `ALTER USER x PASSWORD EXPIRE;`).
+- In newer Oracle versions, `IDENTIFIED BY` triggers password-verification-function rules — a too-simple password can be rejected.
 
 ---
 
-## 12. Change Oracle Password
-- **Purpose:** Update user password.
-- **Pattern:**
-  ```sql
-  ALTER USER hansel IDENTIFIED BY hansel123;
-  ```
+### Drop/Rename Workarounds (Historical)
+#### Explain It
+Before Oracle 8i you could not `DROP COLUMN`, and renaming a column had no direct command. The old workarounds — copy the table without the column, drop the old one, rename the new — are still useful to *know* because they explain why "drop column" is a table rebuild under the hood, and they resurrect when a production table won't let you drop (referential constraints).
+
+#### Prove It
+```sql
+-- the 8i-era recipe for "drop column":
+CREATE TABLE B_NEW AS SELECT BRANCH_NO, NAME FROM BRANCH_MSTR;  -- omit the column
+DROP TABLE BRANCH_MSTR;
+RENAME B_NEW TO BRANCH_MSTR;
+```
+(Modern Oracle: `ALTER TABLE t DROP COLUMN c;` — and `ALTER TABLE t RENAME COLUMN a TO b;` — from `sql-cmd.md`.)
+
+#### Gotchas / Edge Cases
+- The copy-and-rename recipe silently loses constraints, indexes, and grants — always re-add them.
+- Renaming invalidates dependent views/procedures until recompiled (see `db-obj.md`).
 
 ---
 
-## 13. Add Line Feeds to SELECT Output
-- **Purpose:** Format output with newlines.
-- **Pattern:**
-  ```sql
-  SELECT 'CUSTOMER NAME: ' || FNAME || CHR(10) || 'BIRTHDATE: ' || DOB_INC || CHR(10) FROM CUST_MSTR;
-  ```
+### CSV Output in SQL\*Plus
+#### Explain It
+These are SQL\*Plus *client* settings that shape what gets printed: `SET COLSEP ','` puts commas between columns, `SPOOL file` writes output to a file, `SPOOL OFF` closes it. The same trio (headers suppressing, trimspool, colsep) is the classic "export to CSV" recipe.
 
----
+#### Prove It
+```sql
+SET COLSEP ','
+SPOOL MY_EMP_REPORT.TXT
+SELECT BRANCH_NO, NAME FROM BRANCH_MSTR;
+SPOOL OFF
+```
 
-## 14. Numeric to Alphabets (Julian Date Conversion)
-- **Purpose:** Convert numbers to words.
-- **Pattern:**
-  ```sql
-  SELECT TO_CHAR(TO_DATE(34654,'J'),'JSP') FROM DUAL;
-  ```
-
----
-
-## 15. CSV Output
-- **Purpose:** Export query results as CSV.
-- **Pattern:**
-  ```sql
-  SET COLSEP ','
-  SPOOL MY_EMP_REPORT.TXT
-  SELECT ... FROM ...;
-  SPOOL OFF
-  ```
-
----
-
-## 16. Replace NULLs with Meaningful Values
-- **Purpose:** Substitute NULLs in output.
-- **Pattern:**
-  ```sql
-  SELECT NVL(FNAME, 'A'), NVL(MNAME, 'Corporate'), NVL(LNAME, 'Customer') FROM CUST_MSTR;
-  ```
-
----
-
-## 17. Soundex-Based Queries
-- **Purpose:** Phonetic matching for similar-sounding names.
-- **Pattern:**
-  ```sql
-  SELECT * FROM MyFriends WHERE SOUNDEX(NAME) = SOUNDEX('Nita');
-  ```
+#### Gotchas / Edge Cases
+- These are client commands, NOT SQL — they fail in JDBC/other tools; put them in a `.sql` script run from SQL\*Plus.
+- For real CSV use `SET HEADING OFF` + `SET TRIMSPOOL ON`; without them the file gets column headers and trailing blanks.
+- SQLcl/`SELECT ... FOR CSV` (or `\spool`-style tools) are modern alternatives — mention SQLcl if asked.
